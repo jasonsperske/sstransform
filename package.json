@@ -4,6 +4,8 @@
   "description": "XLSX column mapping and transformation via Claude",
   "type": "module",
   "main": "server.js",
+  "license": "MIT",
+  "author": "Jason Sperske",
   "scripts": {
     "start": "node server.js"
   },
