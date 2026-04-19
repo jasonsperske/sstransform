@@ -2,8 +2,23 @@ const $ = (id) => document.getElementById(id);
 
 function fmtDate(ts) {
   if (!ts) return '';
-  const d = new Date(ts);
-  return d.toLocaleString();
+  return new Date(ts).toLocaleString();
+}
+
+function summarize(p) {
+  const bits = [`id ${p.id.slice(0, 8)}`];
+  if (p.type === 'merge') {
+    if (p.leftHeaders && p.leftHeaders.length) bits.push(`${p.leftHeaders.length} left cols`);
+    if (p.rightHeaders && p.rightHeaders.length) bits.push(`${p.rightHeaders.length} right cols`);
+    if (p.columns && p.columns.length) bits.push(`${p.columns.length} merged cols`);
+    if (p.priority) bits.push(`${p.priority} priority`);
+  } else {
+    if (p.targetHeaders && p.targetHeaders.length) bits.push(`${p.targetHeaders.length} target cols`);
+    const savedCount = (p.transformations || []).filter(t => t.code && t.code.trim()).length;
+    if (savedCount) bits.push(`${savedCount} transformations`);
+  }
+  bits.push(`updated ${fmtDate(p.updatedAt)}`);
+  return bits.join(' · ');
 }
 
 function render() {
@@ -24,24 +39,20 @@ function render() {
 
     const main = document.createElement('a');
     main.className = 'project-main';
-    main.href = `/transform/${encodeURIComponent(p.id)}`;
+    main.href = Projects.url(p);
 
     const nameEl = document.createElement('div');
     nameEl.className = 'project-name';
-    nameEl.textContent = p.name || 'Untitled project';
-
-    const metaBits = [];
-    metaBits.push(`id ${p.id.slice(0, 8)}`);
-    if (p.targetHeaders && p.targetHeaders.length) {
-      metaBits.push(`${p.targetHeaders.length} target cols`);
-    }
-    const savedCount = (p.transformations || []).filter(t => t.code && t.code.trim()).length;
-    if (savedCount) metaBits.push(`${savedCount} transformations`);
-    metaBits.push(`updated ${fmtDate(p.updatedAt)}`);
+    nameEl.appendChild(document.createTextNode(p.name || 'Untitled project'));
+    const badge = document.createElement('span');
+    badge.className = `project-type ${p.type || 'transform'}`;
+    badge.textContent = p.type || 'transform';
+    nameEl.appendChild(document.createTextNode(' '));
+    nameEl.appendChild(badge);
 
     const metaEl = document.createElement('div');
     metaEl.className = 'project-meta';
-    metaEl.textContent = metaBits.join(' · ');
+    metaEl.textContent = summarize(p);
 
     main.appendChild(nameEl);
     main.appendChild(metaEl);
@@ -64,9 +75,27 @@ function render() {
   }
 }
 
-$('new-project-btn').addEventListener('click', () => {
-  const p = Projects.create();
-  window.location.href = `/transform/${encodeURIComponent(p.id)}`;
+// New-project dropdown
+const menuBtn = $('new-project-btn');
+const menu = $('new-project-menu');
+
+menuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menu.hidden = !menu.hidden;
+});
+
+document.addEventListener('click', (e) => {
+  if (menu.hidden) return;
+  if (e.target === menuBtn || menu.contains(e.target)) return;
+  menu.hidden = true;
+});
+
+menu.querySelectorAll('[data-type]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const type = btn.dataset.type;
+    const p = Projects.create({ type });
+    window.location.href = Projects.url(p);
+  });
 });
 
 render();

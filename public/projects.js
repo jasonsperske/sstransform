@@ -45,25 +45,46 @@
     saveAll(all);
   }
 
-  function create({ id } = {}) {
+  function create({ id, type = 'transform' } = {}) {
     const now = Date.now();
-    const project = {
+    const base = {
       id: id || randomId(),
-      type: 'transform',
+      type,
       name: '',
       createdAt: now,
       updatedAt: now,
-      sourceHeaders: [],
-      targetHeaders: [],
-      transformations: [],
     };
+    let project;
+    if (type === 'merge') {
+      project = {
+        ...base,
+        leftHeaders: [],
+        rightHeaders: [],
+        priority: 'left',
+        matchCode: '',
+        matchNotes: '',
+        matchColumns: [],
+        columns: [],
+      };
+    } else {
+      project = {
+        ...base,
+        sourceHeaders: [],
+        targetHeaders: [],
+        transformations: [],
+      };
+    }
     upsert(project);
     return project;
+  }
+
+  function projectUrl(p) {
+    return (p.type === 'merge' ? '/merge/' : '/transform/') + encodeURIComponent(p.id);
   }
 
   function list() {
     return Object.values(loadAll()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 
-  global.Projects = { get, upsert, remove, create, list, randomId };
+  global.Projects = { get, upsert, remove, create, list, randomId, url: projectUrl };
 })(window);

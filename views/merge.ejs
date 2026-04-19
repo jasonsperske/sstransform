@@ -1,0 +1,96 @@
+<section class="project-bar">
+  <label class="project-name-field">
+    name
+    <input id="project-name" placeholder="Untitled merge">
+  </label>
+  <span id="project-meta" class="status"></span>
+  <a href="/" class="back-link">← all projects</a>
+</section>
+
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">1</span>
+    <h2>Left</h2>
+    <label class="file-btn">
+      <input type="file" id="left-file" accept=".xlsx,.xls">
+      <span>Choose xlsx…</span>
+    </label>
+    <select id="left-sheet" hidden></select>
+    <label class="sample-size">
+      sample rows:
+      <input type="number" id="sample-size" value="10" min="1" max="100">
+    </label>
+  </div>
+  <div id="left-info" class="info"></div>
+  <div id="left-grid" class="grid-wrap"></div>
+</section>
+
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">2</span>
+    <h2>Right</h2>
+    <label class="file-btn">
+      <input type="file" id="right-file" accept=".xlsx,.xls">
+      <span>Choose xlsx…</span>
+    </label>
+    <select id="right-sheet" hidden></select>
+  </div>
+  <div id="right-info" class="info"></div>
+  <div id="right-grid" class="grid-wrap"></div>
+</section>
+
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">3</span>
+    <h2>Match &amp; Merge</h2>
+    <span class="priority-group">
+      priority:
+      <label><input type="radio" name="priority" value="left" checked> left</label>
+      <label><input type="radio" name="priority" value="right"> right</label>
+    </span>
+    <button id="propose-btn" disabled>Propose merge</button>
+    <span id="propose-status" class="status"></span>
+  </div>
+  <div class="match-editor" id="match-editor" hidden>
+    <div class="join-section">
+      <div class="join-head">Joining logic</div>
+      <div id="match-columns-display" class="match-columns-display"></div>
+      <div class="match-notes-text" id="match-notes"></div>
+      <div class="join-refine">
+        <textarea id="match-refine-comment" placeholder="Adjust how rows are matched (e.g. 'match on email', 'use fuzzy company name')"></textarea>
+        <button id="match-refine-btn">Refine match</button>
+      </div>
+      <details class="match-code-details">
+        <summary>Show match code</summary>
+        <textarea id="match-code" class="code" spellcheck="false" placeholder="body of (leftRow, rightRow) => truthy if the rows represent the same entity"></textarea>
+      </details>
+    </div>
+    <div id="columns-list"></div>
+    <div class="refine-all" id="refine-all" hidden>
+      <textarea id="refine-all-comment" placeholder="Overall feedback to refine match and columns…"></textarea>
+      <button id="refine-all-btn">Refine all</button>
+    </div>
+  </div>
+</section>
+
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">4</span>
+    <h2>Preview</h2>
+    <span id="preview-info" class="status"></span>
+  </div>
+  <div id="preview-grid" class="grid-wrap"></div>
+</section>
+
+<section class="step">
+  <div class="step-head">
+    <span class="step-num">5</span>
+    <h2>Output</h2>
+    <button id="merge-btn" disabled>Merge all rows</button>
+    <button id="download-btn" disabled>Download xlsx</button>
+    <span id="output-status" class="status"></span>
+  </div>
+  <div id="output-grid" class="grid-wrap"></div>
+</section>
+
+<script>window.__PROJECT_ID__ = <%- JSON.stringify(projectId) %>;</script>

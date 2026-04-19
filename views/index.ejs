@@ -1,10 +1,16 @@
 <section class="step">
   <div class="step-head">
     <h2>Projects</h2>
-    <button id="new-project-btn" class="primary">New transform project</button>
+    <div class="new-project-wrap">
+      <button id="new-project-btn" class="primary">New project ▾</button>
+      <div id="new-project-menu" class="menu" hidden>
+        <button data-type="transform">Transform project</button>
+        <button data-type="merge">Merge project</button>
+      </div>
+    </div>
   </div>
   <div id="empty-state" class="info" hidden>
-    No projects yet. Click <strong>New transform project</strong> to create one.
+    No projects yet. Click <strong>New project</strong> to create one.
   </div>
   <div id="project-list"></div>
 </section>
