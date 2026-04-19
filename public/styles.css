@@ -20,6 +20,10 @@ header h1 {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
+.home-link, .home-link:visited {
+  color: inherit;
+  text-decoration: none;
+}
 .subtitle {
   color: #888;
   margin-top: 2px;
@@ -279,3 +283,76 @@ table.grid td.cell-err {
   font-size: 12px;
   resize: vertical;
 }
+
+/* Project list (home page) */
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e8e8e6;
+}
+.project-row:last-child { border-bottom: none; }
+.project-main {
+  flex: 1;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+.project-main:hover .project-name { color: #1a7a43; }
+.project-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.project-meta {
+  color: #888;
+  font-size: 12px;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Project bar (transform page) */
+.project-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #d8d8d6;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+.project-name-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 12px;
+  flex: 1;
+}
+.project-name-field input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #d8d8d6;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #fafafa;
+}
+.back-link {
+  color: #1a7a43;
+  font-size: 12px;
+  text-decoration: none;
+}
+.back-link:hover { text-decoration: underline; }
+
+/* Locked step (e.g. Destination hydrated from saved project) */
+.step.locked .info,
+.step.locked .grid-wrap,
+.step.locked table.grid th,
+.step.locked table.grid td {
+  color: #888;
+  background: #f6f6f5;
+}
+.step.locked .step-head { background: #f3f3f1; }
+#target-locked-note { color: #888; font-style: italic; margin-left: 0; }

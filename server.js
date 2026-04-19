@@ -1,10 +1,40 @@
 import express from 'express';
+import expressLayouts from 'express-ejs-layouts';
 import Anthropic from '@anthropic-ai/sdk';
 import 'dotenv/config';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
+
+app.set('view engine', 'ejs');
+app.set('views', 'views');
+app.use(expressLayouts);
+app.set('layout', 'layout');
+
+const homeScripts = ['/projects.js', '/home.js'];
+const transformScripts = [
+  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  '/projects.js',
+  '/app.js',
+];
+
+app.get('/', (req, res) => {
+  res.render('index', {
+    title: 'sstransform',
+    subtitle: "map one spreadsheet's columns into another's shape",
+    bodyScripts: homeScripts,
+  });
+});
+
+app.get('/transform/:id?', (req, res) => {
+  res.render('transform', {
+    title: 'sstransform — transform',
+    subtitle: "map one spreadsheet's columns into another's shape",
+    projectId: req.params.id || null,
+    bodyScripts: transformScripts,
+  });
+});
 
 const client = new Anthropic();
 
@@ -29,13 +59,17 @@ const transformationsSchema = {
         required: ['targetColumn', 'code', 'notes'],
         additionalProperties: false
       }
+    },
+    suggestedName: {
+      type: 'string',
+      description: 'Short descriptive project name when requested via suggestName; empty string otherwise.'
     }
   },
-  required: ['transformations'],
+  required: ['transformations', 'suggestedName'],
   additionalProperties: false
 };
 
-function buildPrompt({ sourceHeaders, targetHeaders, sourceSample, existingTransformations, refinementComment, targetColumn }) {
+function buildPrompt({ sourceHeaders, targetHeaders, sourceSample, existingTransformations, refinementComment, targetColumn, suggestName }) {
   let msg = `You are mapping data from a source spreadsheet to a destination spreadsheet format.
 
 Source columns: ${JSON.stringify(sourceHeaders)}
@@ -75,7 +109,11 @@ Example entry:
   "notes": "Joins FirstName and LastName with a space, dropping empties."
 }
 
-${existingTransformations && existingTransformations.length ? 'Return the full updated transformation set (one entry per target column).' : 'Return one entry for every target column listed above.'}`;
+${existingTransformations && existingTransformations.length ? 'Return the full updated transformation set (one entry per target column).' : 'Return one entry for every target column listed above.'}
+
+${suggestName
+  ? 'Also propose a short project name (3–6 words) for `suggestedName`. This is a data-transformation project; describe what is being transformed based on the source columns and sample values (e.g. "Customer contacts transform", "Invoice line items transform", "Sensor readings transform"). Do not use quotes or punctuation around the name.'
+  : 'Set `suggestedName` to an empty string.'}`;
 
   return msg;
 }

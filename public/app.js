@@ -6,6 +6,93 @@ const state = {
   output: null,        // [{col: val, ...}, ...]
 };
 
+// Project (saved in localStorage, keyed by URL id)
+let project = null;
+
+function initProject() {
+  const id = window.__PROJECT_ID__;
+  const now = Date.now();
+  const blank = (pid) => ({
+    id: pid, type: 'transform', name: '',
+    createdAt: now, updatedAt: now,
+    sourceHeaders: [], targetHeaders: [], transformations: [],
+  });
+  if (id) {
+    project = Projects.get(id) || blank(id);
+  } else {
+    project = blank(Projects.randomId());
+    window.history.replaceState(null, '', `/transform/${encodeURIComponent(project.id)}`);
+  }
+}
+
+function hydrateFromProject() {
+  if (!project) return;
+  $('project-name').value = project.name || '';
+  if (project.targetHeaders && project.targetHeaders.length) {
+    state.target = {
+      sheets: { saved: { headers: project.targetHeaders.slice(), rows: [] } },
+      sheetNames: ['saved'],
+      activeSheet: 'saved',
+      fileName: '(saved project)',
+    };
+    setSheetOptions($('target-sheet'), ['saved'], 'saved');
+    renderActiveSheet('target');
+    lockTarget(true);
+  }
+  if (project.transformations && project.transformations.length) {
+    state.transformations = project.transformations.map(t => ({ ...t }));
+    renderTransformations();
+  }
+  updateProjectMeta();
+  updateProposeEnabled();
+}
+
+function lockTarget(locked) {
+  const step = $('target-step');
+  const fileBtn = $('target-file-btn');
+  const editBtn = $('target-edit-btn');
+  const note = $('target-locked-note');
+  if (!step) return;
+  step.classList.toggle('locked', locked);
+  fileBtn.hidden = locked;
+  editBtn.hidden = !locked;
+  note.hidden = !locked;
+}
+
+function updateProjectMeta() {
+  const meta = $('project-meta');
+  if (!meta || !project) return;
+  const bits = [`id ${project.id.slice(0, 8)}`];
+  if (project.updatedAt) bits.push(`saved ${new Date(project.updatedAt).toLocaleTimeString()}`);
+  meta.textContent = bits.join(' · ');
+}
+
+function saveCurrent() {
+  if (!project) return;
+  project.name = $('project-name').value.trim();
+  if (state.source) {
+    const sh = state.source.sheets[state.source.activeSheet];
+    project.sourceHeaders = sh.headers.slice();
+  }
+  if (state.target) {
+    const sh = state.target.sheets[state.target.activeSheet];
+    project.targetHeaders = sh.headers.slice();
+  }
+  project.transformations = state.transformations.map(t => ({
+    targetColumn: t.targetColumn,
+    code: t.code || '',
+    notes: t.notes || '',
+  }));
+  Projects.upsert(project);
+  updateProjectMeta();
+}
+
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveCurrent, 400);
+}
+
 // DOM helpers
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}, children = []) => {
@@ -108,6 +195,8 @@ async function loadFile(fileInput, kind) {
     infoEl.textContent = `error: ${err.message}`;
   }
   updateProposeEnabled();
+  saveCurrent();
+  schedulePreview();
 }
 
 function renderActiveSheet(kind) {
@@ -166,6 +255,7 @@ function renderTransformations() {
     codeArea.addEventListener('input', () => {
       state.transformations[idx].code = codeArea.value;
       schedulePreview();
+      scheduleSave();
     });
 
     const preview = el('span', { className: 'preview' }, '—');
@@ -292,7 +382,7 @@ function sourceSample() {
 }
 
 // API call
-async function requestTransformations({ refinementComment, targetColumn } = {}) {
+async function requestTransformations({ refinementComment, targetColumn, suggestName } = {}) {
   const srcSheet = state.source.sheets[state.source.activeSheet];
   const tgtSheet = state.target.sheets[state.target.activeSheet];
   const body = {
@@ -303,6 +393,7 @@ async function requestTransformations({ refinementComment, targetColumn } = {}) 
   if (state.transformations.length) body.existingTransformations = state.transformations;
   if (refinementComment) body.refinementComment = refinementComment;
   if (targetColumn) body.targetColumn = targetColumn;
+  if (suggestName) body.suggestName = true;
 
   const statusEl = $('propose-status');
   statusEl.textContent = 'asking Claude…';
@@ -327,14 +418,22 @@ async function requestTransformations({ refinementComment, targetColumn } = {}) 
     const prior = state.transformations.find(t => t.targetColumn === h);
     return prior || { targetColumn: h, code: '', notes: '' };
   });
+  if (data.suggestedName && !$('project-name').value.trim()) {
+    $('project-name').value = data.suggestedName;
+  }
   renderTransformations();
   statusEl.textContent = `${data.transformations.length} transformations ready`;
   statusEl.className = 'status success';
+  saveCurrent();
 }
 
 // Event wiring
+initProject();
+hydrateFromProject();
+$('project-name').addEventListener('input', scheduleSave);
 $('source-file').addEventListener('change', (e) => loadFile(e.target, 'source'));
 $('target-file').addEventListener('change', (e) => loadFile(e.target, 'target'));
+$('target-edit-btn').addEventListener('click', () => lockTarget(false));
 $('source-sheet').addEventListener('change', (e) => {
   state.source.activeSheet = e.target.value;
   renderActiveSheet('source');
@@ -350,7 +449,8 @@ $('propose-btn').addEventListener('click', async () => {
   $('propose-btn').disabled = true;
   try {
     state.transformations = []; // fresh proposal
-    await requestTransformations();
+    const suggestName = !$('project-name').value.trim();
+    await requestTransformations({ suggestName });
   } catch (e) { /* status shown */ }
   finally { $('propose-btn').disabled = false; }
 });
