@@ -63,9 +63,9 @@ async function render() {
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', async (e) => {
       e.preventDefault();
-      if (!confirm(`Delete "${p.name || 'Untitled project'}"?`)) return;
       await Projects.remove(p.id);
       await render();
+      showUndoToast(p);
     });
     actions.appendChild(delBtn);
 
@@ -73,6 +73,48 @@ async function render() {
     row.appendChild(actions);
     listEl.appendChild(row);
   }
+}
+
+// Undo-delete toast. Shows for UNDO_WINDOW_MS, then expires. After expiry the
+// row is left tombstoned in IDB; the page-load sweep (purgeAgedTombstones)
+// hard-deletes never-synced tombstones once they age past the same window.
+const UNDO_WINDOW_MS = 8000;
+let activeUndo = null; // { id, timer, el }
+
+function dismissUndoToast() {
+  if (!activeUndo) return;
+  clearTimeout(activeUndo.timer);
+  activeUndo.el.remove();
+  activeUndo = null;
+}
+
+function showUndoToast(project) {
+  dismissUndoToast();
+
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast';
+
+  const label = document.createElement('span');
+  label.textContent = `Deleted "${project.name || 'Untitled project'}"`;
+  toast.appendChild(label);
+
+  const btn = document.createElement('button');
+  btn.textContent = 'Undo';
+  btn.addEventListener('click', async () => {
+    const id = activeUndo && activeUndo.id;
+    dismissUndoToast();
+    if (!id) return;
+    await Projects.restore(id);
+    await render();
+  });
+  toast.appendChild(btn);
+
+  document.body.appendChild(toast);
+  activeUndo = {
+    id: project.id,
+    el: toast,
+    timer: setTimeout(dismissUndoToast, UNDO_WINDOW_MS),
+  };
 }
 
 // New-project dropdown
@@ -99,6 +141,12 @@ menu.querySelectorAll('[data-type]').forEach(btn => {
 });
 
 (async () => {
+  // Hard-delete never-synced tombstones older than the undo window — covers
+  // the case where the user deleted a project on a previous visit and
+  // navigated away before the toast expired.
+  try { await Projects.purgeAgedTombstones({ olderThanMs: UNDO_WINDOW_MS }); }
+  catch (e) { console.warn('tombstone sweep failed', e); }
+
   await render();
   // Pull any server-side projects + push local changes when an account is
   // connected. Stub no-ops today; re-render once it lands real data.

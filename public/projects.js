@@ -63,26 +63,53 @@
     await DB.put(STORE, project);
   }
 
-  // Soft delete — tombstone so the deletion can sync. Hard removal happens in
-  // sync.js after the server acks (or immediately if sync is disabled and the
-  // record was never pushed).
+  // Soft delete — always tombstone so the deletion is undoable AND can sync
+  // to other devices on the same account. Permanent removal happens later:
+  //   - sync.js after the server acks the deletion, or
+  //   - the home page's tombstone sweep for never-synced rows that have aged
+  //     past the undo window.
   async function remove(id) {
     const existing = await DB.getByKey(STORE, id);
     if (!existing) return;
-    if (!existing.serverUpdatedAt) {
-      // Never synced to a server, nothing to push — safe to hard-delete.
-      await DB.deleteByKey(STORE, id);
-      return;
-    }
     existing.deleted = 1;
     existing.dirty = 1;
     existing.updatedAt = Date.now();
     await DB.put(STORE, existing);
   }
 
-  // Internal: hard delete (used by sync after server ack).
+  // Undo a soft-delete. Bumps updatedAt + dirty so the restore syncs too.
+  async function restore(id) {
+    const existing = await DB.getByKey(STORE, id);
+    if (!existing) return null;
+    existing.deleted = 0;
+    existing.dirty = 1;
+    existing.updatedAt = Date.now();
+    await DB.put(STORE, existing);
+    return existing;
+  }
+
+  // Internal: hard delete (used by sync after server ack and by the home
+  // page's tombstone sweep for never-synced rows past the undo window).
   async function hardRemove(id) {
     await DB.deleteByKey(STORE, id);
+  }
+
+  // Sweep helper: hard-delete tombstones that were never synced and have aged
+  // past `olderThanMs`. Safe to call on every home-page load; ignores rows
+  // that have a serverUpdatedAt because those still need to push the deletion
+  // to the server before the local copy can be removed.
+  async function purgeAgedTombstones({ olderThanMs = 30_000 } = {}) {
+    const all = await DB.getAll(STORE);
+    const cutoff = Date.now() - olderThanMs;
+    let purged = 0;
+    for (const p of all) {
+      if (!p.deleted) continue;
+      if (p.serverUpdatedAt) continue; // sync needs to push the delete first
+      if ((p.updatedAt || 0) > cutoff) continue; // still inside undo window
+      await DB.deleteByKey(STORE, p.id);
+      purged++;
+    }
+    return purged;
   }
 
   async function create({ id, type = 'transform' } = {}) {
@@ -162,7 +189,9 @@
     getRaw,
     upsert,
     remove,
+    restore,
     hardRemove,
+    purgeAgedTombstones,
     create,
     list,
     listDirty,
