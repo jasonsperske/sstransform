@@ -12,15 +12,19 @@ app.set('views', 'views');
 app.use(expressLayouts);
 app.set('layout', 'layout');
 
-const homeScripts = ['/projects.js', '/home.js'];
+const homeScripts = ['/db.js', '/projects.js', '/sync.js', '/home.js'];
 const transformScripts = [
   'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  '/db.js',
   '/projects.js',
+  '/sync.js',
   '/app.js',
 ];
 const mergeScripts = [
   'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  '/db.js',
   '/projects.js',
+  '/sync.js',
   '/tools.js',
   '/merge.js',
 ];

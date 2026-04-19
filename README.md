@@ -5,7 +5,7 @@ Two Claude-powered workflows over `.xlsx` spreadsheets, run locally in the brows
 - **Transform** — map a source workbook into a destination workbook's column shape. Claude proposes a JavaScript transformation per target column; you refine, preview, and export.
 - **Merge** — combine two workbooks (left + right) into one. Claude proposes both the row-matching logic and per-column merge logic; you refine, preview, and export.
 
-Projects are saved to browser `localStorage` so transformations and merge rules can be reused against new source files with matching columns.
+Projects are saved to the browser's IndexedDB (`sstransform` database) so transformations and merge rules can be reused against new source files with matching columns. Existing `localStorage` projects are migrated on first load. Each project carries sync metadata (`updatedAt`, `serverUpdatedAt`, `dirty`, `deleted`) so a future account-connected mode can push/pull projects between devices.
 
 ## Requirements
 
@@ -39,7 +39,18 @@ Open http://localhost:3000.
 
 ## Projects
 
-The home page (`/`) lists every saved project with its type badge, column counts, and last-saved time. Click **New project ▾** to create a `Transform` or `Merge` project; each gets a random id and is navigable at `/transform/<id>` or `/merge/<id>`. Project state (name, headers, transformations or match/column rules) is persisted to `localStorage` as you work. Deleting a project is a one-click action from the list.
+The home page (`/`) lists every saved project with its type badge, column counts, and last-saved time. Click **New project ▾** to create a `Transform` or `Merge` project; each gets a random id and is navigable at `/transform/<id>` or `/merge/<id>`. Project state (name, headers, transformations or match/column rules) is persisted to IndexedDB as you work. Deleting a project is a one-click action from the list — when an account is connected, deletes are tombstoned so they propagate to other devices before being hard-removed.
+
+### Storage layout
+
+Persistence lives in the `sstransform` IndexedDB database (see `public/db.js`):
+
+- `projects` — one record per project, keyed by `id`. Indexes: `by_updatedAt`, `by_dirty`, `by_deleted`, `by_type`.
+- `meta` — key/value records. `meta:schema` is a self-describing snapshot of the current store/index/keyPath layout (so a rebuild or external introspection tool can read the schema without parsing source). `meta:migrations` is an append-only log of every schema migration that has been applied to this client. Bump `CURRENT_SCHEMA.version` and push an entry into `MIGRATIONS` to evolve the schema; both the schema descriptor and the migration log will be updated on the next open.
+
+### Sync (scaffolded)
+
+`public/sync.js` exposes `Sync.syncAll()` and `Sync.syncOne(id)`. They're invoked on the `/` route and on `/transform/:id` / `/merge/:id` deep-link loads respectively, but `Sync.isEnabled()` returns false until accounts are wired up — every call is a no-op today. Once an account module flips `Sync.configure({ enabled: true, ... })` and provides endpoint URLs + auth fetch options, the existing call sites will start exchanging projects with the server (last-writer-wins on `updatedAt` vs `serverUpdatedAt`, with tombstone propagation).
 
 ## Transform projects (`/transform/<id>`)
 

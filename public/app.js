@@ -6,10 +6,10 @@ const state = {
   output: null,        // [{col: val, ...}, ...]
 };
 
-// Project (saved in localStorage, keyed by URL id)
+// Project (saved in IndexedDB via projects.js, keyed by URL id)
 let project = null;
 
-function initProject() {
+async function initProject() {
   const id = window.__PROJECT_ID__;
   const now = Date.now();
   const blank = (pid) => ({
@@ -18,7 +18,7 @@ function initProject() {
     sourceHeaders: [], targetHeaders: [], transformations: [],
   });
   if (id) {
-    project = Projects.get(id) || blank(id);
+    project = (await Projects.get(id)) || blank(id);
   } else {
     project = blank(Projects.randomId());
     window.history.replaceState(null, '', `/transform/${encodeURIComponent(project.id)}`);
@@ -83,7 +83,10 @@ function saveCurrent() {
     code: t.code || '',
     notes: t.notes || '',
   }));
-  Projects.upsert(project);
+  // upsert is async but we don't await — the local in-memory `project` is the
+  // source of truth for the rest of the page; the IDB write trails by a few
+  // ms with no observable impact.
+  Projects.upsert(project).catch(e => console.warn('project save failed', e));
   updateProjectMeta();
 }
 
@@ -428,8 +431,24 @@ async function requestTransformations({ refinementComment, targetColumn, suggest
 }
 
 // Event wiring
-initProject();
-hydrateFromProject();
+(async () => {
+  await initProject();
+  hydrateFromProject();
+  // Deep-link sync: pull remote changes for THIS project, push if local newer.
+  // Stub no-op until accounts are wired up; safe to call regardless. Only
+  // re-hydrate when sync actually pulled a newer remote — otherwise we'd
+  // clobber input the user just typed.
+  if (project && project.id) {
+    const before = project.updatedAt;
+    Sync.syncOne(project.id).then(async () => {
+      const fresh = await Projects.get(project.id);
+      if (fresh && (fresh.updatedAt || 0) > (before || 0)) {
+        project = fresh;
+        hydrateFromProject();
+      }
+    }).catch(e => console.warn('project sync failed', e));
+  }
+})();
 $('project-name').addEventListener('input', scheduleSave);
 $('source-file').addEventListener('change', (e) => loadFile(e.target, 'source'));
 $('target-file').addEventListener('change', (e) => loadFile(e.target, 'target'));

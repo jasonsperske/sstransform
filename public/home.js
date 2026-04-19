@@ -21,10 +21,10 @@ function summarize(p) {
   return bits.join(' · ');
 }
 
-function render() {
+async function render() {
   const listEl = $('project-list');
   const emptyEl = $('empty-state');
-  const projects = Projects.list();
+  const projects = await Projects.list();
 
   listEl.innerHTML = '';
   if (!projects.length) {
@@ -61,11 +61,11 @@ function render() {
     actions.className = 'project-actions';
     const delBtn = document.createElement('button');
     delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', (e) => {
+    delBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       if (!confirm(`Delete "${p.name || 'Untitled project'}"?`)) return;
-      Projects.remove(p.id);
-      render();
+      await Projects.remove(p.id);
+      await render();
     });
     actions.appendChild(delBtn);
 
@@ -91,11 +91,21 @@ document.addEventListener('click', (e) => {
 });
 
 menu.querySelectorAll('[data-type]').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const type = btn.dataset.type;
-    const p = Projects.create({ type });
+    const p = await Projects.create({ type });
     window.location.href = Projects.url(p);
   });
 });
 
-render();
+(async () => {
+  await render();
+  // Pull any server-side projects + push local changes when an account is
+  // connected. Stub no-ops today; re-render once it lands real data.
+  try {
+    const result = await Sync.syncAll();
+    if (result && (result.pulled || result.pushed)) await render();
+  } catch (e) {
+    console.warn('home sync failed', e);
+  }
+})();

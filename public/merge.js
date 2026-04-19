@@ -110,7 +110,7 @@ function compile(code, argNames = ['row']) {
 
 // ===== Project =====
 
-function initProject() {
+async function initProject() {
   const id = window.__PROJECT_ID__;
   const now = Date.now();
   const blank = (pid) => ({
@@ -120,7 +120,7 @@ function initProject() {
     priority: 'left', matchCode: '', matchNotes: '', matchColumns: [], columns: [],
   });
   if (id) {
-    project = Projects.get(id) || blank(id);
+    project = (await Projects.get(id)) || blank(id);
   } else {
     project = blank(Projects.randomId());
     window.history.replaceState(null, '', `/merge/${encodeURIComponent(project.id)}`);
@@ -174,7 +174,7 @@ function saveCurrent() {
     code: c.code || '',
     notes: c.notes || '',
   }));
-  Projects.upsert(project);
+  Projects.upsert(project).catch(e => console.warn('project save failed', e));
   updateProjectMeta();
 }
 
@@ -473,8 +473,22 @@ async function requestMerge({ refinementComment, suggestName, refineColumn, refi
 
 // ===== Event wiring =====
 
-initProject();
-hydrateFromProject();
+(async () => {
+  await initProject();
+  hydrateFromProject();
+  // Deep-link sync — only re-hydrate when sync actually pulled a newer
+  // remote, so we don't clobber input the user just typed.
+  if (project && project.id) {
+    const before = project.updatedAt;
+    Sync.syncOne(project.id).then(async () => {
+      const fresh = await Projects.get(project.id);
+      if (fresh && (fresh.updatedAt || 0) > (before || 0)) {
+        project = fresh;
+        hydrateFromProject();
+      }
+    }).catch(e => console.warn('project sync failed', e));
+  }
+})();
 
 $('project-name').addEventListener('input', scheduleSave);
 $('left-file').addEventListener('change', (e) => loadFile(e.target, 'left'));
