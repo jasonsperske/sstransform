@@ -31,7 +31,7 @@ const mergeScripts = [
 
 app.get('/', (req, res) => {
   res.render('index', {
-    title: 'sstransform',
+    title: 'Spreadsheet Transform',
     subtitle: "map one spreadsheet's columns into another's shape",
     bodyScripts: homeScripts,
   });
@@ -39,7 +39,7 @@ app.get('/', (req, res) => {
 
 app.get('/transform/:id?', (req, res) => {
   res.render('transform', {
-    title: 'sstransform — transform',
+    title: 'Spreadsheet Transform — Transform',
     subtitle: "map one spreadsheet's columns into another's shape",
     projectId: req.params.id || null,
     bodyScripts: transformScripts,
@@ -48,7 +48,7 @@ app.get('/transform/:id?', (req, res) => {
 
 app.get('/merge/:id?', (req, res) => {
   res.render('merge', {
-    title: 'sstransform — merge',
+    title: 'Spreadsheet Transform — Merge',
     subtitle: 'merge two spreadsheets into one',
     projectId: req.params.id || null,
     bodyScripts: mergeScripts,
