@@ -1,14 +1,15 @@
 import express from 'express';
 import expressLayouts from 'express-ejs-layouts';
 import Anthropic from '@anthropic-ai/sdk';
+import path from 'node:path';
 import 'dotenv/config';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
+app.use(express.static(path.join(import.meta.dirname, 'public')));
 
 app.set('view engine', 'ejs');
-app.set('views', 'views');
+app.set('views', path.join(import.meta.dirname, 'views'));
 app.use(expressLayouts);
 app.set('layout', 'layout');
 
