@@ -7,22 +7,24 @@ import 'dotenv/config';
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(import.meta.dirname, 'public')));
+app.use('/vendor/xlsx-js-style', express.static(path.join(import.meta.dirname, 'node_modules/xlsx-js-style/dist')));
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(import.meta.dirname, 'views'));
 app.use(expressLayouts);
 app.set('layout', 'layout');
 
+const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
 const homeScripts = ['/db.js', '/projects.js', '/sync.js', '/home.js'];
 const transformScripts = [
-  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  xlsxScript,
   '/db.js',
   '/projects.js',
   '/sync.js',
   '/app.js',
 ];
 const mergeScripts = [
-  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
+  xlsxScript,
   '/db.js',
   '/projects.js',
   '/sync.js',
