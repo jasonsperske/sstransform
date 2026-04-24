@@ -14,6 +14,8 @@ app.set('views', path.join(import.meta.dirname, 'views'));
 app.use(expressLayouts);
 app.set('layout', 'layout');
 
+app.locals.ga = process.env.GA || null;
+
 const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
 const homeScripts = ['/db.js', '/projects.js', '/sync.js', '/home.js'];
 const transformScripts = [

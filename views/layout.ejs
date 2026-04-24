@@ -8,6 +8,17 @@
   <% if (typeof headScripts !== 'undefined') { headScripts.forEach(function(src) { %>
     <script src="<%= src %>"></script>
   <% }) } %>
+  <% if (ga) { %>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=<%= ga %>"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', '<%= ga %>');
+    </script>
+  <% } %>
 </head>
 <body>
   <header>
