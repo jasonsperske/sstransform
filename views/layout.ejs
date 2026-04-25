@@ -33,14 +33,20 @@
     <% if (authEnabled) { %>
       <div class="auth-controls">
         <% if (currentUser) { %>
-          <div class="auth-user">
-            <% if (currentUser.picture) { %>
-              <img class="auth-avatar" src="<%= currentUser.picture %>" alt="">
-            <% } %>
-            <span class="auth-name"><%= currentUser.name || currentUser.email || 'Signed in' %></span>
-            <form method="post" action="/auth/logout" class="auth-logout">
-              <button type="submit">Sign out</button>
-            </form>
+          <div class="auth-user" id="auth-user">
+            <button type="button" class="auth-user-btn" id="auth-user-btn" aria-haspopup="menu" aria-expanded="false">
+              <% if (currentUser.picture) { %>
+                <img class="auth-avatar" src="<%= currentUser.picture %>" alt="">
+              <% } %>
+              <span class="auth-name"><%= currentUser.name || currentUser.email || 'Signed in' %></span>
+              <span class="auth-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="auth-menu menu" id="auth-menu" role="menu" hidden>
+              <a href="/settings" role="menuitem">Settings</a>
+              <form method="post" action="/auth/logout" class="auth-logout" role="none">
+                <button type="submit" role="menuitem">Sign out</button>
+              </form>
+            </div>
           </div>
         <% } else { %>
           <div class="auth-signin">
@@ -56,6 +62,27 @@
   <main>
     <%- body %>
   </main>
+  <% if (currentUser) { %>
+    <script>
+      (function() {
+        var btn = document.getElementById('auth-user-btn');
+        var menu = document.getElementById('auth-menu');
+        if (!btn || !menu) return;
+        function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+        function open()  { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          menu.hidden ? open() : close();
+        });
+        document.addEventListener('click', function(e) {
+          if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+        });
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' && !menu.hidden) close();
+        });
+      })();
+    </script>
+  <% } %>
   <% if (typeof bodyScripts !== 'undefined') { bodyScripts.forEach(function(src) { %>
     <script src="<%= src %>"></script>
   <% }) } %>

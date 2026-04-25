@@ -1,12 +1,19 @@
 import express from 'express';
 import expressLayouts from 'express-ejs-layouts';
 import cookieParser from 'cookie-parser';
-import Anthropic from '@anthropic-ai/sdk';
 import path from 'node:path';
 import 'dotenv/config';
 import { runMigrations, openDb } from './lib/db.js';
 import { sessionMiddleware, mountAuthRoutes, authViewLocals, requireAuth } from './lib/auth.js';
 import { listForUser, getOne, putProject } from './lib/projects.js';
+import {
+  AVAILABLE_MODELS,
+  clientAndModelFor,
+  getUserSettings,
+  saveUserSettings,
+  clearUserApiKey,
+} from './lib/settings.js';
+import { DEFAULT_ANTHROPIC_MODEL } from './lib/config.js';
 
 // Apply any pending migrations before the server takes traffic. Safe to
 // run on every boot — it's a no-op when the schema is up to date.
@@ -101,6 +108,57 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
   res.json({ serverUpdatedAt: result.serverUpdatedAt });
 });
 
+// ===== User settings (model + personal API key) =====
+
+app.get('/api/settings', requireAuth, (req, res) => {
+  const s = getUserSettings(openDb(), req.user.id);
+  res.json({
+    model: s.model,
+    hasApiKey: s.hasApiKey,
+    defaultModel: DEFAULT_ANTHROPIC_MODEL,
+    availableModels: AVAILABLE_MODELS,
+  });
+});
+
+app.put('/api/settings', requireAuth, (req, res) => {
+  const { model, apiKey } = req.body || {};
+  // Only forward fields actually provided; undefined means leave alone.
+  const patch = {};
+  if (model !== undefined) patch.model = typeof model === 'string' ? model : null;
+  if (apiKey !== undefined) {
+    if (typeof apiKey !== 'string') {
+      return res.status(400).json({ error: 'apiKey must be a string' });
+    }
+    // Empty string from the form means "no change"; explicit clearing
+    // goes through DELETE /api/settings/api-key.
+    if (apiKey.length > 0) patch.apiKey = apiKey;
+  }
+  // Gate: a non-default model can only be set when the user has (or is
+  // setting) their own API key — otherwise the operator's env key would
+  // be billed for the user's chosen model.
+  if (patch.model) {
+    const current = getUserSettings(openDb(), req.user.id);
+    const willHaveKey = current.hasApiKey || patch.apiKey;
+    if (!willHaveKey) {
+      return res.status(400).json({
+        error: 'set a personal API key before choosing a model',
+      });
+    }
+  }
+  try {
+    saveUserSettings(openDb(), req.user.id, patch);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  const s = getUserSettings(openDb(), req.user.id);
+  res.json({ model: s.model, hasApiKey: s.hasApiKey });
+});
+
+app.delete('/api/settings/api-key', requireAuth, (req, res) => {
+  clearUserApiKey(openDb(), req.user.id);
+  res.json({ hasApiKey: false });
+});
+
 const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
 const homeScripts = [
   '/db.js',
@@ -153,7 +211,14 @@ app.get('/merge/:id?', (req, res) => {
   });
 });
 
-const client = new Anthropic();
+app.get('/settings', (req, res) => {
+  if (!req.user) return res.redirect('/');
+  res.render('settings', {
+    title: 'Spreadsheet Transform — Settings',
+    subtitle: 'your account preferences',
+    bodyScripts: ['/settings.js'],
+  });
+});
 
 const transformationsSchema = {
   type: 'object',
@@ -242,8 +307,9 @@ app.post('/api/transform', async (req, res) => {
       return res.status(400).json({ error: 'sourceHeaders and targetHeaders must be arrays' });
     }
 
+    const { client, model } = clientAndModelFor(req.user);
     const response = await client.messages.create({
-      model: 'claude-opus-4-7',
+      model,
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: buildPrompt(req.body) }],
@@ -411,8 +477,9 @@ app.post('/api/merge', async (req, res) => {
       return res.status(400).json({ error: 'leftHeaders and rightHeaders must be arrays' });
     }
 
+    const { client, model } = clientAndModelFor(req.user);
     const response = await client.messages.create({
-      model: 'claude-opus-4-7',
+      model,
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: buildMergePrompt(req.body) }],

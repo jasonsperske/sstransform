@@ -1,0 +1,86 @@
+<section class="step settings-step">
+  <div class="step-head">
+    <h2>Settings</h2>
+    <span id="settings-status" class="status"></span>
+  </div>
+
+  <form id="settings-form" class="settings-form">
+    <div class="settings-row">
+      <label for="model-select">Claude model</label>
+      <div class="settings-control">
+        <select id="model-select" name="model">
+          <option value="">Use server default</option>
+        </select>
+        <div class="settings-hint" id="model-hint"></div>
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <label for="api-key-input">Your Anthropic API key</label>
+      <div class="settings-control">
+        <div class="api-key-state" id="api-key-state" data-state="loading">
+          <span class="api-key-badge" id="api-key-badge">Loading…</span>
+          <button type="button" class="api-key-remove" id="api-key-remove" hidden>Remove key</button>
+        </div>
+        <input id="api-key-input" name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+        <div class="settings-hint" id="api-key-hint">
+          Stored encrypted at rest. Leave blank to keep the existing value.
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-actions">
+      <button type="submit" class="primary" id="settings-save">Save</button>
+    </div>
+  </form>
+
+  <details class="settings-help">
+    <summary>Learn how to create a secure API key</summary>
+    <div class="settings-help-body">
+      <p>
+        Anthropic keys are scoped to a <strong>Workspace</strong>. Putting
+        this app's key in its own workspace means a leaked or misused key
+        can only spend that workspace's budget — it can't reach any of
+        your other Anthropic projects.
+      </p>
+      <ol>
+        <li>
+          Sign in to the
+          <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">Anthropic Console</a>.
+        </li>
+        <li>
+          Open <strong>Settings → Workspaces</strong> and click
+          <strong>Create Workspace</strong>. Name it something specific
+          like <em>Spreadsheet Transform</em> so you'll recognise it
+          later.
+        </li>
+        <li>
+          Open the new workspace and set a
+          <strong>monthly spend limit</strong> under
+          <strong>Settings → Limits</strong>. Pick the smallest amount
+          that covers your expected use — this is your last line of
+          defence if the key leaks.
+        </li>
+        <li>
+          In the same workspace, go to
+          <strong>API Keys → Create Key</strong>. Give the key a
+          descriptive name (e.g. <em>sstransform-prod</em>) so you can
+          revoke it without guessing.
+        </li>
+        <li>
+          Copy the <code>sk-ant-…</code> value the console shows
+          <em>once</em> and paste it into the field above. Click
+          <strong>Save</strong>. The key is encrypted before it's
+          written to disk; this app never displays it back to you.
+        </li>
+        <li>
+          To revoke later, return to that workspace's
+          <strong>API Keys</strong> page and delete the key — requests
+          from this app will start failing on the next call. Use
+          <strong>Remove key</strong> above to also drop the encrypted
+          copy stored here.
+        </li>
+      </ol>
+    </div>
+  </details>
+</section>

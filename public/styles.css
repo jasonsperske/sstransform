@@ -40,7 +40,7 @@ header {
 }
 .auth-provider-btn:hover { background: #f0f0ee; border-color: #a8a8a6; }
 
-.auth-user { display: inline-flex; align-items: center; gap: 8px; }
+.auth-user { position: relative; display: inline-flex; align-items: center; gap: 8px; }
 .auth-avatar {
   width: 22px;
   height: 22px;
@@ -48,8 +48,37 @@ header {
   object-fit: cover;
 }
 .auth-name { color: #444; }
+.auth-user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px solid #c8c8c6;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.auth-user-btn:hover { background: #f0f0ee; border-color: #a8a8a6; }
+.auth-caret { color: #888; font-size: 10px; }
+.auth-menu {
+  min-width: 160px;
+}
+.auth-menu a, .auth-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #222;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.auth-menu a:hover, .auth-menu button:hover { background: #eef3f0; }
 .auth-logout { margin: 0; }
-.auth-logout button { font-size: 12px; }
 header h1 {
   margin: 0;
   font-size: 18px;
@@ -652,4 +681,138 @@ table.grid td.cell-err {
   border-radius: 3px;
   resize: vertical;
   background: #fff;
+}
+
+/* Settings page */
+.settings-form { padding: 16px 18px; }
+.settings-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0ee;
+}
+.settings-row:last-of-type { border-bottom: none; }
+.settings-row label {
+  font-weight: 600;
+  font-size: 13px;
+  padding-top: 6px;
+  color: #222;
+}
+.settings-control { display: flex; flex-direction: column; gap: 6px; }
+.settings-control input[type=password],
+.settings-control select {
+  padding: 6px 8px;
+  border: 1px solid #d8d8d6;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #fafafa;
+  width: 100%;
+  max-width: 420px;
+}
+.settings-hint {
+  color: #666;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-hint a {
+  color: #c23c2c;
+  text-decoration: none;
+  margin-left: 6px;
+}
+.settings-hint a:hover { text-decoration: underline; }
+.settings-actions {
+  padding-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.api-key-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.api-key-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.api-key-state[data-state="stored"] .api-key-badge {
+  background: #e6f3ec;
+  color: #1a7a43;
+  border-color: #b9dec8;
+}
+.api-key-state[data-state="empty"] .api-key-badge {
+  background: #f1f1ef;
+  color: #777;
+  border-color: #ddd;
+}
+.api-key-state[data-state="loading"] .api-key-badge {
+  background: #f1f1ef;
+  color: #888;
+  border-color: #ddd;
+}
+.api-key-remove {
+  font-size: 12px;
+  padding: 3px 10px;
+  background: #fff;
+  border: 1px solid #d8b4ad;
+  color: #c23c2c;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.api-key-remove:hover:not(:disabled) {
+  background: #fbecea;
+  border-color: #c23c2c;
+}
+
+.settings-help {
+  margin: 4px 18px 18px;
+  border-top: 1px solid #e8e8e6;
+  padding-top: 12px;
+}
+.settings-help summary {
+  cursor: pointer;
+  color: #1a7a43;
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+  padding: 4px 0;
+}
+.settings-help summary:hover { text-decoration: underline; }
+.settings-help[open] summary { color: #155e34; }
+.settings-help-body {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #fafafa;
+  border: 1px solid #e8e8e6;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #444;
+  line-height: 1.55;
+}
+.settings-help-body p { margin: 0 0 10px; }
+.settings-help-body ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.settings-help-body li { margin-bottom: 6px; }
+.settings-help-body li:last-child { margin-bottom: 0; }
+.settings-help-body a {
+  color: #1a7a43;
+  text-decoration: none;
+}
+.settings-help-body a:hover { text-decoration: underline; }
+.settings-help-body code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #eef1ef;
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 11px;
 }
