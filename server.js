@@ -1,10 +1,19 @@
 import express from 'express';
 import expressLayouts from 'express-ejs-layouts';
+import cookieParser from 'cookie-parser';
 import Anthropic from '@anthropic-ai/sdk';
 import path from 'node:path';
 import 'dotenv/config';
+import { runMigrations, openDb } from './lib/db.js';
+import { sessionMiddleware, mountAuthRoutes, authViewLocals, requireAuth } from './lib/auth.js';
+import { listForUser, getOne, putProject } from './lib/projects.js';
+
+// Apply any pending migrations before the server takes traffic. Safe to
+// run on every boot — it's a no-op when the schema is up to date.
+runMigrations({ log: (m) => console.log(m) });
 
 const app = express();
+app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(import.meta.dirname, 'public')));
 app.use('/vendor/xlsx-js-style', express.static(path.join(import.meta.dirname, 'node_modules/xlsx-js-style/dist')));
@@ -15,13 +24,90 @@ app.use(expressLayouts);
 app.set('layout', 'layout');
 
 app.locals.ga = process.env.GA || null;
+Object.assign(app.locals, authViewLocals());
+
+app.use(sessionMiddleware);
+app.use((req, res, next) => {
+  res.locals.currentUser = req.user
+    ? { id: req.user.id, name: req.user.name, email: req.user.email, picture: req.user.picture, provider: req.user.provider }
+    : null;
+  next();
+});
+
+mountAuthRoutes(app);
+
+// ===== Project sync (per authenticated user) =====
+//
+// Server stores opaque JSON blobs keyed by (userId, projectId). Every PUT
+// includes the client's last-seen `parentServerUpdatedAt`; if that no
+// longer matches the row's current `updatedAt`, the server returns 409
+// with the current server version so the client can present a conflict
+// dialog. Tombstones flow through the same PUT (deleted: 1).
+
+app.get('/api/projects', requireAuth, (req, res) => {
+  const rows = listForUser(openDb(), req.user.id);
+  const projects = rows.map(r => ({
+    id: r.id,
+    project: JSON.parse(r.data),
+    serverUpdatedAt: r.updatedAt,
+    deleted: !!r.deleted,
+  }));
+  res.json({ projects, serverTime: Date.now() });
+});
+
+app.get('/api/projects/:id', requireAuth, (req, res) => {
+  const row = getOne(openDb(), req.user.id, req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  res.json({
+    project: JSON.parse(row.data),
+    serverUpdatedAt: row.updatedAt,
+    deleted: !!row.deleted,
+  });
+});
+
+app.put('/api/projects/:id', requireAuth, (req, res) => {
+  const { project, parentServerUpdatedAt, deleted } = req.body || {};
+  if (!project || typeof project !== 'object') {
+    return res.status(400).json({ error: 'project body required' });
+  }
+  if (project.id && project.id !== req.params.id) {
+    return res.status(400).json({ error: 'id mismatch' });
+  }
+
+  const result = putProject(openDb(), {
+    userId: req.user.id,
+    id: req.params.id,
+    data: project,
+    parentServerUpdatedAt: parentServerUpdatedAt || 0,
+    deleted: !!deleted,
+  });
+
+  if (result.conflict) {
+    return res.status(409).json({
+      conflict: true,
+      server: {
+        project: JSON.parse(result.server.data),
+        serverUpdatedAt: result.server.updatedAt,
+        deleted: !!result.server.deleted,
+      },
+    });
+  }
+  res.json({ serverUpdatedAt: result.serverUpdatedAt });
+});
 
 const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
-const homeScripts = ['/db.js', '/projects.js', '/sync.js', '/home.js'];
+const homeScripts = [
+  '/db.js',
+  '/projects.js',
+  '/conflict-dialog.js',
+  '/sync.js',
+  '/home.js',
+];
 const transformScripts = [
   xlsxScript,
   '/db.js',
   '/projects.js',
+  '/conflict-dialog.js',
   '/sync.js',
   '/app.js',
 ];
@@ -29,6 +115,7 @@ const mergeScripts = [
   xlsxScript,
   '/db.js',
   '/projects.js',
+  '/conflict-dialog.js',
   '/sync.js',
   '/tools.js',
   '/merge.js',

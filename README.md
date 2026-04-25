@@ -9,7 +9,7 @@ Projects are saved to the browser's IndexedDB (`sstransform` database) so transf
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 25+ (pinned via `.nvmrc` — run `nvm use` in the repo root)
 - An Anthropic API key
 
 ## Setup
@@ -28,6 +28,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 PORT=3000
 ```
 
+Optional — enable federated login (Google / Microsoft). See
+[Authentication](#authentication) below.
+
 ## Run
 
 ```bash
@@ -36,6 +39,75 @@ npm run dev     # auto-reload via nodemon (watches server.js and views/)
 ```
 
 Open http://localhost:3000.
+
+## Database
+
+User identity and sessions live in SQLite at `data/sstransform.sqlite`
+(created on first boot — the `data/` directory is gitignored). Schema
+changes ship as ordered files under `migrations/`; `lib/db.js` runs any
+pending migration at server startup, so `npm start` on a fresh checkout
+just works.
+
+The same runner is exposed as an npm script:
+
+```bash
+npm run db:build              # apply pending migrations
+npm run db:build -- --status  # show applied vs pending
+```
+
+Applied migrations are recorded in the `_migrations` table, so re-runs
+are no-ops.
+
+## Authentication
+
+Auth is entirely opt-in. If no provider is configured, the header shows
+no sign-in controls and every visitor is served an anonymous session —
+the app behaves exactly as before. To enable login:
+
+1. Register an OAuth 2.0 / OpenID Connect client with each provider you
+   want:
+   - **Google** — Google Cloud Console → _Credentials_ → _OAuth 2.0
+     Client ID_. Authorized redirect URI: `<base>/auth/google/callback`.
+   - **Microsoft** — Microsoft Entra → _App registrations_ → _New
+     registration_. Redirect URI: `<base>/auth/microsoft/callback`.
+     `MICROSOFT_TENANT` (default `common`) controls which account types
+     can sign in.
+2. Put the resulting `CLIENT_ID`/`CLIENT_SECRET` values into `.env`
+   (template in `.env.example`). A provider's Sign in button only
+   renders when both values are set for it, so you can enable Google
+   only, Microsoft only, or both.
+3. Restart the server. The Sign in controls appear in the header.
+
+### Session model
+
+- Every visitor — logged in or not — gets a row in the `sessions` table
+  and an HMAC-signed `sst.sid` cookie. Anonymous sessions have
+  `userId = NULL`.
+- On successful login, the existing session's `userId` is updated in
+  place. The cookie is unchanged, so anything attached to the session
+  (current and future) follows the user into their account without a
+  migration step.
+- Logout deletes the session row and clears the cookie.
+
+### Token storage
+
+The federated identity (provider subject, email, name, picture) is
+stored in the `users` table. OAuth access/refresh tokens are **never
+stored in plaintext** — only their SHA-256 hashes land in
+`oauth_tokens`, along with the `expiresAt` stamp. Identity extraction
+happens from the `id_token` claims returned over TLS from the
+provider's token endpoint; we don't re-call the provider after login.
+
+### Environment variables
+
+| Var | Purpose |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OIDC client |
+| `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Microsoft OIDC client |
+| `MICROSOFT_TENANT` | `common` (default), `organizations`, `consumers`, or a tenant id |
+| `OAUTH_REDIRECT_BASE` | Public base URL for callbacks; derived from request when unset |
+| `SESSION_SECRET` | HMAC secret for session cookie; auto-generated to `data/.session-secret` when unset |
+| `DATABASE_PATH` | SQLite file path; defaults to `data/sstransform.sqlite` |
 
 ## Projects
 

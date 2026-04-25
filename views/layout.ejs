@@ -4,7 +4,11 @@
   <meta charset="utf-8">
   <title><%= title %></title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
+  <script>
+    window.__currentUser = <%- JSON.stringify(currentUser || null) %>;
+  </script>
   <% if (typeof headScripts !== 'undefined') { headScripts.forEach(function(src) { %>
     <script src="<%= src %>"></script>
   <% }) } %>
@@ -22,8 +26,32 @@
 </head>
 <body>
   <header>
-    <a class="home-link" href="/"><h1>Spreadsheet Transform</h1></a>
-    <div class="subtitle"><%= subtitle %></div>
+    <div class="header-main">
+      <a class="home-link" href="/"><h1>Spreadsheet Transform</h1></a>
+      <div class="subtitle"><%= subtitle %></div>
+    </div>
+    <% if (authEnabled) { %>
+      <div class="auth-controls">
+        <% if (currentUser) { %>
+          <div class="auth-user">
+            <% if (currentUser.picture) { %>
+              <img class="auth-avatar" src="<%= currentUser.picture %>" alt="">
+            <% } %>
+            <span class="auth-name"><%= currentUser.name || currentUser.email || 'Signed in' %></span>
+            <form method="post" action="/auth/logout" class="auth-logout">
+              <button type="submit">Sign out</button>
+            </form>
+          </div>
+        <% } else { %>
+          <div class="auth-signin">
+            <span class="auth-signin-label">Sign in:</span>
+            <% providers.forEach(function(p) { %>
+              <a class="auth-provider-btn" href="/auth/<%= p.id %>"><%= p.label %></a>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+    <% } %>
   </header>
   <main>
     <%- body %>
