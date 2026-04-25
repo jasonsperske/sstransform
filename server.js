@@ -12,6 +12,7 @@ import {
   getUserSettings,
   saveUserSettings,
   clearUserApiKey,
+  supportsAdaptiveThinking,
 } from './lib/settings.js';
 import { DEFAULT_ANTHROPIC_MODEL } from './lib/config.js';
 
@@ -311,7 +312,7 @@ app.post('/api/transform', async (req, res) => {
     const response = await client.messages.create({
       model,
       max_tokens: 16000,
-      thinking: { type: 'adaptive' },
+      ...(supportsAdaptiveThinking(model) ? { thinking: { type: 'adaptive' } } : {}),
       messages: [{ role: 'user', content: buildPrompt(req.body) }],
       output_config: {
         format: {
@@ -481,7 +482,7 @@ app.post('/api/merge', async (req, res) => {
     const response = await client.messages.create({
       model,
       max_tokens: 16000,
-      thinking: { type: 'adaptive' },
+      ...(supportsAdaptiveThinking(model) ? { thinking: { type: 'adaptive' } } : {}),
       messages: [{ role: 'user', content: buildMergePrompt(req.body) }],
       output_config: {
         format: {
