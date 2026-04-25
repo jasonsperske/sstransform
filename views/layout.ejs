@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
   <script>
-    window.__currentUser = <%- JSON.stringify(currentUser || null) %>;
+    window.__currentUser = <%- JSON.stringify(safeCurrentUser(currentUser)) %>;
   </script>
   <% if (typeof headScripts !== 'undefined') { headScripts.forEach(function(src) { %>
     <script src="<%= src %>"></script>

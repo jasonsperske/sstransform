@@ -251,6 +251,11 @@
     return runTx(db, [storeName], 'readwrite', (tx) => reqAsPromise(tx.objectStore(storeName).delete(key)));
   }
 
+  async function clear(storeName) {
+    const db = await open();
+    return runTx(db, [storeName], 'readwrite', (tx) => reqAsPromise(tx.objectStore(storeName).clear()));
+  }
+
   async function getByIndex(storeName, indexName, query) {
     const db = await open();
     return runTx(db, [storeName], 'readonly', (tx) => {
@@ -271,6 +276,7 @@
     getByKey,
     put,
     deleteByKey,
+    clear,
     getByIndex,
     readSchemaSnapshot,
     SCHEMA: CURRENT_SCHEMA,

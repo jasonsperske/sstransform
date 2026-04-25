@@ -171,6 +171,13 @@
     await DB.put(STORE, project);
   }
 
+  // Wipe every project (including tombstones) from local storage. Called on
+  // logout so a different user signing in on this browser doesn't see the
+  // previous user's projects.
+  async function clearAll() {
+    await DB.clear(STORE);
+  }
+
   // Sync helper: mark a local row as successfully pushed.
   async function markSynced(id, serverUpdatedAt) {
     const row = await DB.getByKey(STORE, id);
@@ -197,7 +204,25 @@
     listDirty,
     applyRemote,
     markSynced,
+    clearAll,
     randomId,
     url: projectUrl,
   };
+
+  // Intercept the layout's logout form so we can purge the local IDB before
+  // the server clears the session cookie. The form lives in layout.ejs and is
+  // already in the DOM by the time bodyScripts run (they're at end-of-body).
+  // form.submit() does not re-fire the submit event, so no re-entry guard.
+  const logoutForm = document.querySelector('form.auth-logout');
+  if (logoutForm) {
+    logoutForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await clearAll();
+      } catch (err) {
+        console.warn('failed to purge local projects on logout', err);
+      }
+      logoutForm.submit();
+    });
+  }
 })(window);

@@ -27,10 +27,16 @@ app.locals.ga = process.env.GA || null;
 Object.assign(app.locals, authViewLocals());
 
 app.use(sessionMiddleware);
+function safeCurrentUser(user) {
+  if (!user) return null;
+  return { id: user.id, name: user.name, picture: user.picture, provider: user.provider };
+}
+
 app.use((req, res, next) => {
   res.locals.currentUser = req.user
     ? { id: req.user.id, name: req.user.name, email: req.user.email, picture: req.user.picture, provider: req.user.provider }
     : null;
+  res.locals.safeCurrentUser = safeCurrentUser;
   next();
 });
 
