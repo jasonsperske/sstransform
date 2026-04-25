@@ -78,6 +78,21 @@ header {
   font-family: inherit;
 }
 .auth-menu a:hover, .auth-menu button:hover { background: #eef3f0; }
+.auth-menu a#auth-menu-billing {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.auth-menu-balance {
+  font-size: 11px;
+  font-weight: 600;
+  color: #155e34;
+  background: #e6f2eb;
+  border-radius: 10px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
 .auth-logout { margin: 0; }
 header h1 {
   margin: 0;
@@ -771,6 +786,77 @@ table.grid td.cell-err {
   background: #fbecea;
   border-color: #c23c2c;
 }
+
+.billing-section {
+  margin: 4px 18px 18px;
+  padding: 14px 16px;
+  border: 1px solid #e8e8e6;
+  border-radius: 4px;
+  background: #fafafa;
+}
+.billing-section h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: #155e34;
+}
+.billing-section .settings-hint { margin: 0 0 10px; }
+.billing-balance {
+  font-size: 13px;
+  font-weight: 600;
+  color: #155e34;
+  margin-bottom: 10px;
+}
+.billing-chart {
+  margin: 0 0 12px;
+}
+.billing-chart h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.billing-chart svg {
+  display: block;
+  width: 100%;
+  height: 80px;
+  background: #fff;
+  border: 1px solid #e0e0de;
+  border-radius: 3px;
+}
+.billing-chart-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #666;
+  font-variant-numeric: tabular-nums;
+}
+
+.billing-packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.billing-pack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e0e0de;
+  border-radius: 4px;
+}
+.billing-pack-label { font-weight: 600; font-size: 13px; }
+.billing-pack-tokens { font-size: 12px; color: #555; }
+.billing-pack-price { font-size: 12px; color: #155e34; margin-bottom: 4px; }
+.billing-pack button { align-self: flex-start; padding: 4px 14px; font-size: 12px; }
+.billing-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #444;
+}
+.billing-status.success { color: #155e34; }
+.billing-status.error { color: #b13727; }
 
 .settings-help {
   margin: 4px 18px 18px;

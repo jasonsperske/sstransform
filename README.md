@@ -108,6 +108,82 @@ provider's token endpoint; we don't re-call the provider after login.
 | `OAUTH_REDIRECT_BASE` | Public base URL for callbacks; derived from request when unset |
 | `SESSION_SECRET` | HMAC secret for session cookie; auto-generated to `data/.session-secret` when unset |
 | `DATABASE_PATH` | SQLite file path; defaults to `data/sstransform.sqlite` |
+| `STRIPE_PUBLISHABLE_KEY` / `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Set all three to enable token-pack billing — see [Billing](#billing-optional) |
+
+## Billing (optional)
+
+Operators can let signed-in users buy prepaid Claude **token packs**
+through Stripe Checkout. The feature is fully off until all three of
+`STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET`
+are set — without them the billing UI is hidden and the
+`/api/billing/*` routes return 404.
+
+How it interacts with the existing model picker:
+
+- Without a personal Anthropic key, every signed-in user starts on the
+  server default model (`ANTHROPIC_MODEL`), paid for by the operator's
+  `ANTHROPIC_API_KEY`. Same as before.
+- Buying a pack credits the user's `tokenBalance` (raw Claude
+  input + output tokens). A positive balance unlocks the model picker,
+  exactly like a personal key does.
+- When the user runs a `Propose` or `Refine` against a non-default
+  model, the call uses the operator's key and debits
+  `response.usage.input_tokens + response.usage.output_tokens` from
+  the user's balance.
+- When the balance hits zero, requests revert to the server default
+  model until the user tops up.
+- Bringing your own key (the existing flow) bypasses billing entirely;
+  BYOK users pay Anthropic directly and never debit a token balance.
+
+### Token catalog (`data/catalog.json`)
+
+The packs offered to users live in `data/catalog.json` (the `data/`
+directory is gitignored — keep one per environment). Reload happens
+automatically on file change; restart not required.
+
+```json
+{
+  "currency": "usd",
+  "packs": [
+    { "id": "starter", "label": "Starter pack", "tokens": 500000,  "priceCents": 500 },
+    { "id": "plus",    "label": "Plus pack",    "tokens": 2500000, "priceCents": 2000 },
+    { "id": "pro",     "label": "Pro pack",     "tokens": 7000000, "priceCents": 5000 }
+  ]
+}
+```
+
+Field reference:
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `currency` | yes | ISO 4217 lower-case (`usd`, `eur`, …). Forwarded to Stripe Checkout. |
+| `packs[].id` | yes | Stable string id used by the client to request a checkout session and tagged on Stripe `metadata.packId`. Must be unique. |
+| `packs[].label` | yes | Shown in the settings UI and used as the line item name in Checkout. |
+| `packs[].tokens` | yes | Positive integer — Claude tokens credited on payment. |
+| `packs[].priceCents` | yes | Positive integer — amount in the smallest currency unit. `500` = $5.00 USD. |
+
+Stripe Products are not pre-registered — each pack is sent to Checkout
+as inline `price_data`, so editing the catalog is a JSON change with
+no Stripe-dashboard work.
+
+### Stripe setup
+
+1. Grab your test keys from the Stripe Dashboard → _Developers → API
+   keys_ and put `pk_test_…` / `sk_test_…` in `.env`.
+2. Run `stripe listen --forward-to localhost:3000/api/billing/webhook`
+   (or set up a real webhook endpoint in the dashboard pointing at
+   `<base>/api/billing/webhook`). Copy the resulting `whsec_…` value
+   into `STRIPE_WEBHOOK_SECRET`.
+3. Restart the server. The settings page will show a **Tokens**
+   section with the catalog packs once a signed-in user opens it.
+
+### Schema
+
+| Table | Purpose |
+| --- | --- |
+| `user_settings.tokenBalance` | Cached running balance (raw tokens). |
+| `user_settings.stripeCustomerId` | Cached customer id so repeat checkouts reuse one Stripe customer per user. |
+| `token_ledger` | Append-only audit. `delta > 0` for credits (carry the Stripe event id; `UNIQUE` constraint = idempotent webhooks), `delta < 0` for debits. |
 
 ## Projects
 

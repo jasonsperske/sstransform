@@ -43,6 +43,12 @@
             </button>
             <div class="auth-menu menu" id="auth-menu" role="menu" hidden>
               <a href="/settings" role="menuitem">Settings</a>
+              <% if (stripeEnabled) { %>
+                <a href="/settings#billing" role="menuitem" id="auth-menu-billing">
+                  <span>Billing</span>
+                  <span class="auth-menu-balance" id="auth-menu-balance" hidden></span>
+                </a>
+              <% } %>
               <form method="post" action="/auth/logout" class="auth-logout" role="none">
                 <button type="submit" role="menuitem">Sign out</button>
               </form>
@@ -68,8 +74,27 @@
         var btn = document.getElementById('auth-user-btn');
         var menu = document.getElementById('auth-menu');
         if (!btn || !menu) return;
+        var balanceEl = document.getElementById('auth-menu-balance');
+        var balanceLoaded = false;
+        function fmtTokens(n) {
+          if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
+          if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'K';
+          return String(n);
+        }
+        function loadBalance() {
+          if (!balanceEl || balanceLoaded) return;
+          balanceLoaded = true;
+          fetch('/api/billing/status', { credentials: 'same-origin' })
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+              if (!d) return;
+              balanceEl.textContent = fmtTokens(d.tokenBalance || 0) + ' tokens';
+              balanceEl.hidden = false;
+            })
+            .catch(function() { balanceLoaded = false; });
+        }
         function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
-        function open()  { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); }
+        function open()  { menu.hidden = false; btn.setAttribute('aria-expanded', 'true'); loadBalance(); }
         btn.addEventListener('click', function(e) {
           e.stopPropagation();
           menu.hidden ? open() : close();

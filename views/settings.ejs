@@ -34,6 +34,25 @@
     </div>
   </form>
 
+  <section class="billing-section" id="billing" hidden>
+    <h3>Tokens</h3>
+    <p class="settings-hint">
+      Buy a token pack to use a non-default Claude model without
+      bringing your own API key. Tokens are consumed by Claude
+      input + output tokens on each <em>Propose</em> or <em>Refine</em>.
+      When the balance hits zero, requests revert to the server default
+      model until you top up.
+    </p>
+    <div class="billing-balance" id="billing-balance">Loading…</div>
+    <div class="billing-chart" id="billing-chart" hidden>
+      <h4>Usage — last 30 days</h4>
+      <svg id="billing-chart-svg" viewBox="0 0 600 100" preserveAspectRatio="none" aria-label="Daily token usage"></svg>
+      <div class="billing-chart-meta" id="billing-chart-meta"></div>
+    </div>
+    <div class="billing-packs" id="billing-packs"></div>
+    <div class="billing-status" id="billing-status"></div>
+  </section>
+
   <details class="settings-help">
     <summary>Learn how to create a secure API key</summary>
     <div class="settings-help-body">

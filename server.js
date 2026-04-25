@@ -14,7 +14,15 @@ import {
   clearUserApiKey,
   supportsAdaptiveThinking,
 } from './lib/settings.js';
-import { DEFAULT_ANTHROPIC_MODEL } from './lib/config.js';
+import {
+  loadCatalog,
+  createCheckoutSession,
+  verifyWebhook,
+  handleWebhookEvent,
+  debitTokens,
+  getUsageHistory,
+} from './lib/billing.js';
+import { DEFAULT_ANTHROPIC_MODEL, STRIPE_ENABLED, STRIPE_PUBLISHABLE_KEY } from './lib/config.js';
 
 // Apply any pending migrations before the server takes traffic. Safe to
 // run on every boot — it's a no-op when the schema is up to date.
@@ -22,6 +30,31 @@ runMigrations({ log: (m) => console.log(m) });
 
 const app = express();
 app.use(cookieParser());
+
+// Stripe webhook MUST receive the raw request body so the signature
+// header verifies correctly. Mount this route before express.json() so
+// the global JSON parser doesn't consume the stream first.
+if (STRIPE_ENABLED) {
+  app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    if (!sig) return res.status(400).send('missing signature');
+    let event;
+    try {
+      event = verifyWebhook(req.body, sig);
+    } catch (err) {
+      console.error('[billing] webhook verify failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+    try {
+      handleWebhookEvent(openDb(), event);
+    } catch (err) {
+      console.error('[billing] webhook handler failed:', err);
+      return res.status(500).send('handler error');
+    }
+    res.json({ received: true });
+  });
+}
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(import.meta.dirname, 'public')));
 app.use('/vendor/xlsx-js-style', express.static(path.join(import.meta.dirname, 'node_modules/xlsx-js-style/dist')));
@@ -32,6 +65,7 @@ app.use(expressLayouts);
 app.set('layout', 'layout');
 
 app.locals.ga = process.env.GA || null;
+app.locals.stripeEnabled = STRIPE_ENABLED;
 Object.assign(app.locals, authViewLocals());
 
 app.use(sessionMiddleware);
@@ -116,8 +150,10 @@ app.get('/api/settings', requireAuth, (req, res) => {
   res.json({
     model: s.model,
     hasApiKey: s.hasApiKey,
+    tokenBalance: s.tokenBalance,
     defaultModel: DEFAULT_ANTHROPIC_MODEL,
     availableModels: AVAILABLE_MODELS,
+    billingEnabled: STRIPE_ENABLED,
   });
 });
 
@@ -134,15 +170,18 @@ app.put('/api/settings', requireAuth, (req, res) => {
     // goes through DELETE /api/settings/api-key.
     if (apiKey.length > 0) patch.apiKey = apiKey;
   }
-  // Gate: a non-default model can only be set when the user has (or is
-  // setting) their own API key — otherwise the operator's env key would
-  // be billed for the user's chosen model.
+  // Gate: a non-default model can only be set when the user has either
+  // (a) their own API key (BYOK — they pay Anthropic directly) or
+  // (b) a positive prepaid token balance (we pay Anthropic with the
+  // operator key and debit their balance). Otherwise the operator's env
+  // key would silently subsidise the user's chosen model.
   if (patch.model) {
     const current = getUserSettings(openDb(), req.user.id);
     const willHaveKey = current.hasApiKey || patch.apiKey;
-    if (!willHaveKey) {
+    const hasBalance = (current.tokenBalance || 0) > 0;
+    if (!willHaveKey && !hasBalance) {
       return res.status(400).json({
-        error: 'set a personal API key before choosing a model',
+        error: 'add a personal API key or buy tokens before choosing a model',
       });
     }
   }
@@ -158,6 +197,54 @@ app.put('/api/settings', requireAuth, (req, res) => {
 app.delete('/api/settings/api-key', requireAuth, (req, res) => {
   clearUserApiKey(openDb(), req.user.id);
   res.json({ hasApiKey: false });
+});
+
+// ===== Billing (Stripe-backed token packs) =====
+//
+// All routes 404 when Stripe isn't configured, so a fork without
+// payment keys gets the same shape as if these routes didn't exist.
+
+app.get('/api/billing/status', requireAuth, (req, res) => {
+  if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });
+  const s = getUserSettings(openDb(), req.user.id);
+  let catalog = null;
+  try {
+    catalog = loadCatalog();
+  } catch (err) {
+    console.error('[billing] catalog load failed:', err.message);
+  }
+  res.json({
+    enabled: !!catalog,
+    publishableKey: STRIPE_PUBLISHABLE_KEY,
+    tokenBalance: s.tokenBalance,
+    catalog: catalog || { currency: 'usd', packs: [] },
+  });
+});
+
+app.get('/api/billing/usage', requireAuth, (req, res) => {
+  if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });
+  res.json({ usage: getUsageHistory(openDb(), req.user.id, 30) });
+});
+
+app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });
+  const { packId } = req.body || {};
+  if (!packId || typeof packId !== 'string') {
+    return res.status(400).json({ error: 'packId required' });
+  }
+  try {
+    const base = `${req.protocol}://${req.get('host')}`;
+    const session = await createCheckoutSession(openDb(), {
+      user: req.user,
+      packId,
+      successUrl: `${base}/settings?checkout=success`,
+      cancelUrl: `${base}/settings?checkout=cancel`,
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[billing] checkout error:', err);
+    res.status(400).json({ error: err.message || 'checkout failed' });
+  }
 });
 
 const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
@@ -308,7 +395,7 @@ app.post('/api/transform', async (req, res) => {
       return res.status(400).json({ error: 'sourceHeaders and targetHeaders must be arrays' });
     }
 
-    const { client, model } = clientAndModelFor(req.user);
+    const { client, model, debit } = clientAndModelFor(req.user);
     const response = await client.messages.create({
       model,
       max_tokens: 16000,
@@ -321,6 +408,7 @@ app.post('/api/transform', async (req, res) => {
         }
       }
     });
+    if (debit) chargeUsage(debit.userId, response.usage, 'transform');
 
     const textBlock = response.content.find(b => b.type === 'text');
     if (!textBlock) {
@@ -333,6 +421,16 @@ app.post('/api/transform', async (req, res) => {
     res.status(500).json({ error: err.message || 'Internal error' });
   }
 });
+
+function chargeUsage(userId, usage, reason) {
+  const tokens = (usage?.input_tokens || 0) + (usage?.output_tokens || 0);
+  if (tokens <= 0) return;
+  try {
+    debitTokens(openDb(), { userId, tokens, reason });
+  } catch (err) {
+    console.error('[billing] debit failed:', err);
+  }
+}
 
 const mergeSchema = {
   type: 'object',
@@ -478,7 +576,7 @@ app.post('/api/merge', async (req, res) => {
       return res.status(400).json({ error: 'leftHeaders and rightHeaders must be arrays' });
     }
 
-    const { client, model } = clientAndModelFor(req.user);
+    const { client, model, debit } = clientAndModelFor(req.user);
     const response = await client.messages.create({
       model,
       max_tokens: 16000,
@@ -491,6 +589,7 @@ app.post('/api/merge', async (req, res) => {
         }
       }
     });
+    if (debit) chargeUsage(debit.userId, response.usage, 'merge');
 
     const textBlock = response.content.find(b => b.type === 'text');
     if (!textBlock) {
