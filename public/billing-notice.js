@@ -40,6 +40,7 @@
     buyBtn.className = 'primary';
     buyBtn.textContent = 'Buy more tokens';
     buyBtn.addEventListener('click', () => {
+      if (window.Analytics) Analytics.track('button_click', { button: 'buy_tokens', surface: 'exhaust_notice' });
       window.location.href = '/settings#billing';
     });
     actions.appendChild(buyBtn);

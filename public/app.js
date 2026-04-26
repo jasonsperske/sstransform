@@ -486,6 +486,7 @@ function renderTransformations() {
           await requestTransformations({
             refinementComment: refineArea.value,
             targetColumn: t.targetColumn,
+            trackEvent: { name: 'refine_column', params: { surface: 'transform', column: t.targetColumn } },
           });
           refineArea.value = '';
         } catch (e) {
@@ -582,7 +583,7 @@ function sourceSample() {
 }
 
 // API call
-async function requestTransformations({ refinementComment, targetColumn, suggestName } = {}) {
+async function requestTransformations({ refinementComment, targetColumn, suggestName, trackEvent } = {}) {
   const srcSheet = state.source.sheets[state.source.activeSheet];
   const tgtSheet = state.target.sheets[state.target.activeSheet];
   const body = {
@@ -611,6 +612,9 @@ async function requestTransformations({ refinementComment, targetColumn, suggest
     throw new Error(err.error);
   }
   const data = await res.json();
+  if (trackEvent) {
+    Analytics.track(trackEvent.name, { ...trackEvent.params, model: data.model });
+  }
   if (data.tokensExhausted && window.BillingNotice) {
     BillingNotice.showExhausted(data.tokensExhausted);
   }
@@ -663,7 +667,10 @@ $('propose-btn').addEventListener('click', async () => {
   try {
     state.transformations = []; // fresh proposal
     const suggestName = !$('project-name').value.trim();
-    await requestTransformations({ suggestName });
+    await requestTransformations({
+      suggestName,
+      trackEvent: { name: 'button_click', params: { button: 'propose_columns', surface: 'transform' } },
+    });
   } catch (e) { /* status shown */ }
   finally { $('propose-btn').disabled = false; }
 });
@@ -674,7 +681,10 @@ $('refine-all-btn').addEventListener('click', async () => {
   $('refine-all-btn').disabled = true;
   $('refine-all-btn').textContent = 'refining…';
   try {
-    await requestTransformations({ refinementComment: comment });
+    await requestTransformations({
+      refinementComment: comment,
+      trackEvent: { name: 'refine_all', params: { surface: 'transform' } },
+    });
     $('refine-all-comment').value = '';
   } catch (e) { /* status shown */ }
   finally {
@@ -684,6 +694,7 @@ $('refine-all-btn').addEventListener('click', async () => {
 });
 
 $('transform-btn').addEventListener('click', () => {
+  Analytics.track('button_click', { button: 'run_transform', surface: 'transform' });
   const srcSheet = state.source.sheets[state.source.activeSheet];
   const tgtHeaders = state.target.sheets[state.target.activeSheet].headers;
   const compiled = state.transformations.map(t => ({
@@ -836,6 +847,7 @@ function downloadStyledFromTarget() {
 
 $('download-btn').addEventListener('click', () => {
   if (!state.output) return;
+  Analytics.track('button_click', { button: 'download_output', surface: 'transform' });
   if (state.target && state.target.bytes) {
     downloadStyledFromTarget();
     return;

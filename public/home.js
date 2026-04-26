@@ -63,6 +63,7 @@ async function render() {
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', async (e) => {
       e.preventDefault();
+      Analytics.track('button_click', { button: 'delete_project', surface: 'home', project_type: p.type || 'transform' });
       const snapshot = { ...p };
       await Projects.remove(p.id);
       await render();
@@ -137,6 +138,7 @@ document.addEventListener('click', (e) => {
 menu.querySelectorAll('[data-type]').forEach(btn => {
   btn.addEventListener('click', async () => {
     const type = btn.dataset.type;
+    Analytics.track('button_click', { button: 'new_project', surface: 'home', project_type: type });
     const p = await Projects.create({ type });
     window.location.href = Projects.url(p);
   });

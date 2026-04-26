@@ -345,12 +345,14 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
 
 const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
 const homeScripts = [
+  '/analytics.js',
   '/projects.js',
   '/auth-merge.js',
   '/home.js',
 ];
 const transformScripts = [
   xlsxScript,
+  '/analytics.js',
   '/projects.js',
   '/auth-merge.js',
   '/billing-notice.js',
@@ -358,6 +360,7 @@ const transformScripts = [
 ];
 const mergeScripts = [
   xlsxScript,
+  '/analytics.js',
   '/projects.js',
   '/auth-merge.js',
   '/billing-notice.js',
@@ -396,7 +399,7 @@ app.get('/settings', (req, res) => {
   res.render('settings', {
     title: 'Spreadsheet Transform — Settings',
     subtitle: 'your account preferences',
-    bodyScripts: ['/settings.js'],
+    bodyScripts: ['/analytics.js', '/settings.js'],
   });
 });
 
@@ -507,6 +510,7 @@ app.post('/api/transform', async (req, res) => {
       return res.status(502).json({ error: 'No text block in Claude response' });
     }
     const data = JSON.parse(textBlock.text);
+    data.model = model;
     if (exhausted) data.tokensExhausted = exhausted;
     res.json(data);
   } catch (err) {
@@ -713,6 +717,7 @@ app.post('/api/merge', async (req, res) => {
       return res.status(502).json({ error: 'No text block in Claude response' });
     }
     const data = JSON.parse(textBlock.text);
+    data.model = model;
     if (exhausted) data.tokensExhausted = exhausted;
     res.json(data);
   } catch (err) {

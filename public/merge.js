@@ -284,7 +284,11 @@ function renderMatchAndColumns() {
         refineBtn.disabled = true;
         refineBtn.textContent = 'refining…';
         try {
-          await requestMerge({ refinementComment: comment, refineColumn: col.name });
+          await requestMerge({
+            refinementComment: comment,
+            refineColumn: col.name,
+            trackEvent: { name: 'refine_column', params: { surface: 'merge', column: col.name } },
+          });
           refineArea.value = '';
         } catch (e) {
           alert('refine failed: ' + e.message);
@@ -407,7 +411,7 @@ function renderPreview() {
 
 // ===== API =====
 
-async function requestMerge({ refinementComment, suggestName, refineColumn, refineMatch } = {}) {
+async function requestMerge({ refinementComment, suggestName, refineColumn, refineMatch, trackEvent } = {}) {
   const body = {
     leftHeaders: state.left.sheets[state.left.activeSheet].headers,
     rightHeaders: state.right.sheets[state.right.activeSheet].headers,
@@ -439,6 +443,9 @@ async function requestMerge({ refinementComment, suggestName, refineColumn, refi
     throw new Error(err.error);
   }
   const data = await res.json();
+  if (trackEvent) {
+    Analytics.track(trackEvent.name, { ...trackEvent.params, model: data.model });
+  }
   if (data.tokensExhausted && window.BillingNotice) {
     BillingNotice.showExhausted(data.tokensExhausted);
   }
@@ -519,7 +526,10 @@ $('propose-btn').addEventListener('click', async () => {
     state.matchColumns = [];
     state.columns = [];
     const suggestName = !$('project-name').value.trim();
-    await requestMerge({ suggestName });
+    await requestMerge({
+      suggestName,
+      trackEvent: { name: 'button_click', params: { button: 'propose_merge', surface: 'merge' } },
+    });
   } catch (e) { /* status shown */ }
   finally { $('propose-btn').disabled = false; }
 });
@@ -531,7 +541,11 @@ $('match-refine-btn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'refining…';
   try {
-    await requestMerge({ refinementComment: comment, refineMatch: true });
+    await requestMerge({
+      refinementComment: comment,
+      refineMatch: true,
+      trackEvent: { name: 'refine_match', params: { surface: 'merge' } },
+    });
     $('match-refine-comment').value = '';
   } catch (e) { /* status shown */ }
   finally {
@@ -546,7 +560,10 @@ $('refine-all-btn').addEventListener('click', async () => {
   $('refine-all-btn').disabled = true;
   $('refine-all-btn').textContent = 'refining…';
   try {
-    await requestMerge({ refinementComment: comment });
+    await requestMerge({
+      refinementComment: comment,
+      trackEvent: { name: 'refine_all', params: { surface: 'merge' } },
+    });
     $('refine-all-comment').value = '';
   } catch (e) { /* status shown */ }
   finally {
@@ -556,6 +573,7 @@ $('refine-all-btn').addEventListener('click', async () => {
 });
 
 $('merge-btn').addEventListener('click', () => {
+  Analytics.track('button_click', { button: 'run_merge', surface: 'merge' });
   const leftRows = state.left.sheets[state.left.activeSheet].rows;
   const rightRows = state.right.sheets[state.right.activeSheet].rows;
   const { merged, errorCells } = runMerge(leftRows, rightRows);
@@ -570,6 +588,7 @@ $('merge-btn').addEventListener('click', () => {
 
 $('download-btn').addEventListener('click', () => {
   if (!state.output) return;
+  Analytics.track('button_click', { button: 'download_output', surface: 'merge' });
   const headers = state.columns.map(c => c.name);
   const aoa = [headers, ...state.output.map(r => headers.map(h => r[h] ?? ''))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);

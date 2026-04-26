@@ -111,7 +111,16 @@
       btn.type = 'button';
       btn.className = 'primary';
       btn.textContent = 'Buy';
-      btn.addEventListener('click', () => buyPack(p.id, btn));
+      btn.addEventListener('click', () => {
+        Analytics.track('buy_tokens', {
+          surface: 'settings',
+          pack_id: p.id,
+          tokens: p.tokens,
+          price_cents: p.priceCents,
+          currency: catalog.currency,
+        });
+        buyPack(p.id, btn);
+      });
       card.appendChild(btn);
       billingPacks.appendChild(card);
     });
