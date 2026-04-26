@@ -238,9 +238,90 @@
     const params = new URLSearchParams(window.location.search);
     if (params.get('checkout') === 'success') {
       setBillingStatus('Payment received — your tokens will appear in a moment.', 'success');
+      // Strip the query so a refresh doesn't re-open the upgrade dialog.
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
+      // Offer the user the more-capable models their tokens just unlocked.
+      const upgrades = (data.availableModels || [])
+        .filter(m => m.id !== defaultModel)
+        .slice(0, 2);
+      if (upgrades.length) showUpgradeDialog(upgrades);
     } else if (params.get('checkout') === 'cancel') {
       setBillingStatus('Checkout cancelled.', 'error');
     }
+  }
+
+  // Post-purchase upsell: invite the user to switch from the free default
+  // model to one of the more capable ones their new token balance unlocks.
+  // The "no thank you" branch leaves the saved model untouched.
+  function showUpgradeDialog(models) {
+    const overlay = document.createElement('div');
+    overlay.className = 'cf-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'cf-dialog';
+    dialog.style.width = 'min(440px, 100%)';
+
+    const title = document.createElement('div');
+    title.className = 'cf-title';
+    title.textContent = 'Tokens added — pick a more capable model?';
+    dialog.appendChild(title);
+
+    const blurb = document.createElement('div');
+    blurb.className = 'cf-blurb';
+    blurb.textContent =
+      'Your tokens unlock the models below. Pick one to switch right now, or stick with the free default and change it later from this page.';
+    dialog.appendChild(blurb);
+
+    const actions = document.createElement('div');
+    actions.className = 'cf-actions';
+    actions.style.flexWrap = 'wrap';
+
+    async function pick(modelId, btn) {
+      btn.disabled = true;
+      const r = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ model: modelId }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        setStatus(err.error || 'Failed to switch model', 'error');
+        btn.disabled = false;
+        return;
+      }
+      const updated = await r.json();
+      hasApiKey = updated.hasApiKey;
+      modelSelect.value = modelId;
+      renderModelEnabled();
+      renderModelHint();
+      renderApiKeyStatus();
+      setStatus('Model switched to ' + modelId, 'success');
+      overlay.remove();
+    }
+
+    models.forEach(m => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'primary';
+      btn.textContent = 'Use ' + m.label;
+      btn.addEventListener('click', () => pick(m.id, btn));
+      actions.appendChild(btn);
+    });
+
+    const spacer = document.createElement('div');
+    spacer.className = 'cf-spacer';
+    actions.appendChild(spacer);
+
+    const declineBtn = document.createElement('button');
+    declineBtn.type = 'button';
+    declineBtn.textContent = "No thank you, I'll use the free model for now";
+    declineBtn.addEventListener('click', () => overlay.remove());
+    actions.appendChild(declineBtn);
+
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
   }
 
   modelSelect.addEventListener('change', renderModelHint);

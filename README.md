@@ -242,7 +242,7 @@ return ln && rn && levenshteinDistance(ln, rn) <= 2;
 - **Backend** (`server.js`) — Express app that renders the two project views and exposes two Claude-backed endpoints:
   - `POST /api/transform` — returns `{ transformations[], suggestedName }` constrained by a JSON schema.
   - `POST /api/merge` — returns `{ matchCode, matchNotes, matchColumns[], columns[], suggestedName }` constrained by a JSON schema. Supports scoped refinements via `refineColumn` or `refineMatch` so the UI can refine one piece without re-rolling the whole proposal.
-- Model: `claude-opus-4-7` with adaptive thinking enabled.
+- Default model: `claude-haiku-4-5` (free tier). Signed-in users with a personal API key or a positive prepaid token balance can switch to `claude-sonnet-4-6` or `claude-opus-4-7` (both with adaptive thinking).
 
 ## Security note
 
