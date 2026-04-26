@@ -439,6 +439,9 @@ async function requestMerge({ refinementComment, suggestName, refineColumn, refi
     throw new Error(err.error);
   }
   const data = await res.json();
+  if (data.tokensExhausted && window.BillingNotice) {
+    BillingNotice.showExhausted(data.tokensExhausted);
+  }
 
   if (refineColumn) {
     const byName = new Map((data.columns || []).map(c => [c.name, c]));

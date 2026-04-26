@@ -198,8 +198,9 @@ app.put('/api/settings', requireAuth, (req, res) => {
   // (a) their own API key (BYOK — they pay Anthropic directly) or
   // (b) a positive prepaid token balance (we pay Anthropic with the
   // operator key and debit their balance). Otherwise the operator's env
-  // key would silently subsidise the user's chosen model.
-  if (patch.model) {
+  // key would silently subsidise the user's chosen model. Picking the
+  // free default explicitly is always allowed.
+  if (patch.model && patch.model !== DEFAULT_ANTHROPIC_MODEL) {
     const current = getUserSettings(openDb(), req.user.id);
     const willHaveKey = current.hasApiKey || patch.apiKey;
     const hasBalance = (current.tokenBalance || 0) > 0;
@@ -281,12 +282,14 @@ const transformScripts = [
   xlsxScript,
   '/projects.js',
   '/auth-merge.js',
+  '/billing-notice.js',
   '/app.js',
 ];
 const mergeScripts = [
   xlsxScript,
   '/projects.js',
   '/auth-merge.js',
+  '/billing-notice.js',
   '/tools.js',
   '/merge.js',
 ];
@@ -426,13 +429,14 @@ app.post('/api/transform', async (req, res) => {
         }
       }
     });
-    if (debit) chargeUsage(debit.userId, response.usage, 'transform');
+    const exhausted = debit ? chargeUsage(debit.userId, response.usage, 'transform') : null;
 
     const textBlock = response.content.find(b => b.type === 'text');
     if (!textBlock) {
       return res.status(502).json({ error: 'No text block in Claude response' });
     }
     const data = JSON.parse(textBlock.text);
+    if (exhausted) data.tokensExhausted = exhausted;
     res.json(data);
   } catch (err) {
     console.error('transform error:', err);
@@ -440,14 +444,38 @@ app.post('/api/transform', async (req, res) => {
   }
 });
 
+// Charge the call against the user's prepaid balance. When this debit
+// zeros the balance AND the user had a non-default model selected, drop
+// the saved preference so the settings UI stops claiming a model the
+// next request can't actually use, and return the info the caller needs
+// to surface a "you ran out" popup. Returns null otherwise.
 function chargeUsage(userId, usage, reason) {
   const tokens = (usage?.input_tokens || 0) + (usage?.output_tokens || 0);
-  if (tokens <= 0) return;
+  if (tokens <= 0) return null;
+  const db = openDb();
   try {
-    debitTokens(openDb(), { userId, tokens, reason });
+    debitTokens(db, { userId, tokens, reason });
   } catch (err) {
     console.error('[billing] debit failed:', err);
+    return null;
   }
+  const settings = getUserSettings(db, userId);
+  if (settings.tokenBalance > 0) return null;
+  if (!settings.model || settings.model === DEFAULT_ANTHROPIC_MODEL) return null;
+  const previous = settings.model;
+  try {
+    saveUserSettings(db, userId, { model: null });
+  } catch (err) {
+    console.error('[billing] reset model failed:', err);
+    return null;
+  }
+  const labelOf = (id) => AVAILABLE_MODELS.find(m => m.id === id)?.label || id;
+  return {
+    previousModel: previous,
+    previousLabel: labelOf(previous),
+    defaultModel: DEFAULT_ANTHROPIC_MODEL,
+    defaultLabel: labelOf(DEFAULT_ANTHROPIC_MODEL),
+  };
 }
 
 const mergeSchema = {
@@ -607,13 +635,14 @@ app.post('/api/merge', async (req, res) => {
         }
       }
     });
-    if (debit) chargeUsage(debit.userId, response.usage, 'merge');
+    const exhausted = debit ? chargeUsage(debit.userId, response.usage, 'merge') : null;
 
     const textBlock = response.content.find(b => b.type === 'text');
     if (!textBlock) {
       return res.status(502).json({ error: 'No text block in Claude response' });
     }
     const data = JSON.parse(textBlock.text);
+    if (exhausted) data.tokensExhausted = exhausted;
     res.json(data);
   } catch (err) {
     console.error('merge error:', err);

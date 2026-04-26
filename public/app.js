@@ -611,6 +611,9 @@ async function requestTransformations({ refinementComment, targetColumn, suggest
     throw new Error(err.error);
   }
   const data = await res.json();
+  if (data.tokensExhausted && window.BillingNotice) {
+    BillingNotice.showExhausted(data.tokensExhausted);
+  }
   // Align to target column order, preserve any previously-edited codes not returned.
   const byCol = new Map(data.transformations.map(t => [t.targetColumn, t]));
   state.transformations = tgtSheet.headers.map(h => {

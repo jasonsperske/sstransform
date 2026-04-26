@@ -60,16 +60,13 @@
 
   function renderModelHint() {
     if (!modelUnlocked()) {
-      const tail = billingEnabled
+      modelHint.textContent = billingEnabled
         ? 'Add a personal API key below or buy tokens to choose a different model.'
         : 'Add a personal API key below to choose a different model.';
-      modelHint.textContent = tail + ' Without one, all requests use the server default (' + defaultModel + ').';
       return;
     }
-    if (!modelSelect.value) {
-      modelHint.textContent = 'Currently using the server default (' + defaultModel + ').';
-    } else if (!hasApiKey && tokenBalance > 0) {
-      modelHint.textContent = 'Powered by your prepaid token balance. When it hits zero, requests revert to ' + defaultModel + '.';
+    if (!hasApiKey && tokenBalance > 0 && modelSelect.value !== defaultModel) {
+      modelHint.textContent = 'Powered by your prepaid token balance. When it hits zero, requests revert to the free model.';
     } else {
       modelHint.textContent = '';
     }
@@ -218,17 +215,15 @@
     billingEnabled = !!data.billingEnabled;
 
     modelSelect.innerHTML = '';
-    const defaultOpt = document.createElement('option');
-    defaultOpt.value = '';
-    defaultOpt.textContent = 'Use server default (' + defaultModel + ')';
-    modelSelect.appendChild(defaultOpt);
     data.availableModels.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.label;
       modelSelect.appendChild(opt);
     });
-    modelSelect.value = data.model || '';
+    // No saved preference (or legacy null) → show the free default selected,
+    // since that's what the runtime is actually using.
+    modelSelect.value = data.model || defaultModel;
     renderModelEnabled();
     renderModelHint();
     renderApiKeyStatus();
