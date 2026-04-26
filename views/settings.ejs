@@ -51,6 +51,20 @@
     </div>
     <div class="billing-packs" id="billing-packs"></div>
     <div class="billing-status" id="billing-status"></div>
+
+    <section class="billing-transactions" id="billing-transactions" hidden>
+      <div class="billing-transactions-head">
+        <h4>Transactions</h4>
+        <a id="billing-transactions-download" href="/api/billing/transactions.xlsx" download>Download all (.xlsx)</a>
+      </div>
+      <table class="grid" id="billing-transactions-table">
+        <thead>
+          <tr><th>Date</th><th>Description</th><th class="num">Tokens</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="settings-hint" id="billing-transactions-meta"></div>
+    </section>
   </section>
 
   <details class="settings-help">

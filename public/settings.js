@@ -187,19 +187,71 @@
 
   async function loadBilling() {
     if (!billingEnabled) return;
-    const [statusRes, usageRes] = await Promise.all([
+    const [statusRes, usageRes, txRes] = await Promise.all([
       fetch('/api/billing/status', { credentials: 'same-origin' }),
       fetch('/api/billing/usage', { credentials: 'same-origin' }),
+      fetch('/api/billing/transactions?limit=50', { credentials: 'same-origin' }),
     ]);
     if (!statusRes.ok) {
       renderBilling(null);
       renderUsageChart([]);
+      renderTransactions([]);
       return;
     }
     const data = await statusRes.json();
     renderBilling(data);
     const usage = usageRes.ok ? (await usageRes.json()).usage : [];
     renderUsageChart(usage);
+    const transactions = txRes.ok ? (await txRes.json()).transactions : [];
+    renderTransactions(transactions);
+  }
+
+  // Transactions table: shown only when the user has a non-empty ledger
+  // (which under current rules means they've purchased at least once,
+  // since debits can't happen without a prior credit). Server caps the
+  // list at 50 — the .xlsx download covers everything.
+  function humanizeReason(reason) {
+    if (!reason) return '';
+    if (reason.startsWith('stripe:')) {
+      const pack = reason.slice('stripe:'.length);
+      return pack && pack !== 'pack' ? 'Token purchase (' + pack + ')' : 'Token purchase';
+    }
+    if (reason === 'transform') return 'Transform request';
+    if (reason === 'merge') return 'Merge request';
+    return reason;
+  }
+
+  function renderTransactions(transactions) {
+    const section = document.getElementById('billing-transactions');
+    if (!section) return;
+    if (!transactions || !transactions.length) {
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+    const tbody = section.querySelector('tbody');
+    tbody.innerHTML = '';
+    for (const t of transactions) {
+      const tr = document.createElement('tr');
+      const dateEl = document.createElement('td');
+      dateEl.textContent = new Date(t.createdAt).toLocaleString();
+      const descEl = document.createElement('td');
+      descEl.textContent = humanizeReason(t.reason);
+      const amtEl = document.createElement('td');
+      amtEl.className = 'num ' + (t.delta >= 0 ? 'credit' : 'debit');
+      const sign = t.delta >= 0 ? '+' : '−';
+      amtEl.textContent = sign + Math.abs(t.delta).toLocaleString();
+      tr.appendChild(dateEl);
+      tr.appendChild(descEl);
+      tr.appendChild(amtEl);
+      tbody.appendChild(tr);
+    }
+    const meta = document.getElementById('billing-transactions-meta');
+    if (meta) {
+      meta.textContent = transactions.length >= 50
+        ? 'Showing the 50 most recent. Download to see the full history.'
+        : `Showing ${transactions.length} transaction${transactions.length === 1 ? '' : 's'}.`;
+    }
   }
 
   async function load() {

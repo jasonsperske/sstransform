@@ -28,12 +28,31 @@ import {
   handleWebhookEvent,
   debitTokens,
   getUsageHistory,
+  getTransactionHistory,
+  reconcileAllBalances,
 } from './lib/billing.js';
+import XLSX from 'xlsx-js-style';
 import { DEFAULT_ANTHROPIC_MODEL, STRIPE_ENABLED, STRIPE_PUBLISHABLE_KEY } from './lib/config.js';
 
 // Apply any pending migrations before the server takes traffic. Safe to
 // run on every boot — it's a no-op when the schema is up to date.
 runMigrations({ log: (m) => console.log(m) });
+
+// Reconcile the cached `user_settings.tokenBalance` against the ledger.
+// Normally a no-op; logs and repairs any drift introduced by manual SQL
+// edits, half-applied migrations, or future code that touches the
+// ledger without going through credit/debitTokens.
+{
+  const fixes = reconcileAllBalances(openDb());
+  if (fixes.length) {
+    console.warn(`[billing] reconciled ${fixes.length} drifted balance(s):`);
+    for (const f of fixes) {
+      console.warn(`  ${f.userId}: cached=${f.previous} ledger=${f.recomputed} (drift ${f.drift > 0 ? '+' : ''}${f.drift})`);
+    }
+  } else {
+    console.log('[billing] balance cache reconciled with ledger');
+  }
+}
 
 const app = express();
 app.use(cookieParser());
@@ -250,6 +269,58 @@ app.get('/api/billing/usage', requireAuth, (req, res) => {
   if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });
   res.json({ usage: getUsageHistory(openDb(), req.user.id, 30) });
 });
+
+app.get('/api/billing/transactions', requireAuth, (req, res) => {
+  if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+  const rows = getTransactionHistory(openDb(), req.user.id, { limit });
+  res.json({ transactions: rows });
+});
+
+// Full ledger export. Streams an .xlsx with all entries oldest-first so
+// the running balance column reads naturally. Cap at 5000 rows to match
+// getTransactionHistory's clamp — well above what any real user would
+// generate in normal use.
+app.get('/api/billing/transactions.xlsx', requireAuth, (req, res) => {
+  if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });
+  const desc = getTransactionHistory(openDb(), req.user.id, { limit: 5000 });
+  const rows = desc.slice().reverse(); // oldest-first for running balance
+  let running = 0;
+  const aoa = [
+    ['Date', 'Description', 'Type', 'Tokens', 'Running balance', 'Reference'],
+    ...rows.map(r => {
+      running += r.delta;
+      return [
+        new Date(r.createdAt).toISOString(),
+        humanizeReason(r.reason),
+        r.delta >= 0 ? 'Credit' : 'Debit',
+        Math.abs(r.delta),
+        Math.max(0, running),
+        r.stripeEventId || '',
+      ];
+    }),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 22 }, { wch: 28 }, { wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 32 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const filename = `sstransform-transactions-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
+});
+
+function humanizeReason(reason) {
+  if (!reason) return '';
+  if (reason.startsWith('stripe:')) {
+    const pack = reason.slice('stripe:'.length);
+    return pack && pack !== 'pack' ? `Token purchase (${pack})` : 'Token purchase';
+  }
+  if (reason === 'transform') return 'Transform request';
+  if (reason === 'merge') return 'Merge request';
+  return reason;
+}
 
 app.post('/api/billing/checkout', requireAuth, async (req, res) => {
   if (!STRIPE_ENABLED) return res.status(404).json({ error: 'billing not configured' });

@@ -858,6 +858,32 @@ table.grid td.cell-err {
 }
 .billing-status.success { color: #155e34; }
 .billing-status.error { color: #b13727; }
+.billing-transactions {
+  margin-top: 18px;
+}
+.billing-transactions-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.billing-transactions-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.billing-transactions-head a {
+  font-size: 12px;
+  color: #1a7a43;
+}
+.billing-transactions table.grid td.num,
+.billing-transactions table.grid th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.billing-transactions table.grid td.credit { color: #155e34; }
+.billing-transactions table.grid td.debit  { color: #666; }
+.billing-transactions .settings-hint { margin-top: 6px; }
 
 .settings-help {
   margin: 4px 18px 18px;
