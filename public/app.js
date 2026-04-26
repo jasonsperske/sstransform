@@ -6,7 +6,7 @@ const state = {
   output: null,        // [{col: val, ...}, ...]
 };
 
-// Project (saved in IndexedDB via projects.js, keyed by URL id)
+// Project (server-stored via projects.js, keyed by URL id)
 let project = null;
 
 async function initProject() {
@@ -64,12 +64,18 @@ function lockTarget(locked) {
   headerRowsInput.disabled = locked;
 }
 
+let savesInFlight = 0;
+let lastSaveError = null;
+
 function updateProjectMeta() {
   const meta = $('project-meta');
   if (!meta || !project) return;
   const bits = [`id ${project.id.slice(0, 8)}`];
-  if (project.updatedAt) bits.push(`saved ${new Date(project.updatedAt).toLocaleTimeString()}`);
+  if (savesInFlight > 0) bits.push('saving…');
+  else if (lastSaveError) bits.push('save failed');
+  else if (project.updatedAt) bits.push(`saved ${new Date(project.updatedAt).toLocaleTimeString()}`);
   meta.textContent = bits.join(' · ');
+  meta.classList.toggle('save-error', !!lastSaveError && savesInFlight === 0);
 }
 
 function saveCurrent() {
@@ -89,17 +95,12 @@ function saveCurrent() {
     code: t.code || '',
     notes: t.notes || '',
   }));
-  // upsert is async but we don't await — the local in-memory `project` is the
-  // source of truth for the rest of the page; the IDB write trails by a few
-  // ms with no observable impact.
-  Projects.upsert(project).catch(e => console.warn('project save failed', e));
+  savesInFlight++;
+  lastSaveError = null;
   updateProjectMeta();
-}
-
-let saveTimer = null;
-function scheduleSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveCurrent, 400);
+  Projects.upsert(project)
+    .catch(e => { lastSaveError = e; console.warn('project save failed', e); })
+    .finally(() => { savesInFlight--; updateProjectMeta(); });
 }
 
 // DOM helpers
@@ -454,8 +455,8 @@ function renderTransformations() {
     codeArea.addEventListener('input', () => {
       state.transformations[idx].code = codeArea.value;
       schedulePreview();
-      scheduleSave();
     });
+    codeArea.addEventListener('blur', saveCurrent);
 
     const preview = el('span', { className: 'preview' }, '—');
     const runBtn = el('button', {
@@ -628,24 +629,14 @@ async function requestTransformations({ refinementComment, targetColumn, suggest
 
 // Event wiring
 (async () => {
+  // Wait for any post-login orphan-merge prompt before fetching the
+  // project — otherwise a deep link to a just-merged project id would
+  // 404 against the user's account and load as blank.
+  if (window.Auth) await window.Auth.ready;
   await initProject();
   hydrateFromProject();
-  // Deep-link sync: pull remote changes for THIS project, push if local newer.
-  // Stub no-op until accounts are wired up; safe to call regardless. Only
-  // re-hydrate when sync actually pulled a newer remote — otherwise we'd
-  // clobber input the user just typed.
-  if (project && project.id) {
-    const before = project.updatedAt;
-    Sync.syncOne(project.id).then(async () => {
-      const fresh = await Projects.get(project.id);
-      if (fresh && (fresh.updatedAt || 0) > (before || 0)) {
-        project = fresh;
-        hydrateFromProject();
-      }
-    }).catch(e => console.warn('project sync failed', e));
-  }
 })();
-$('project-name').addEventListener('input', scheduleSave);
+$('project-name').addEventListener('blur', saveCurrent);
 $('source-file').addEventListener('change', (e) => loadFile(e.target, 'source'));
 $('target-file').addEventListener('change', (e) => loadFile(e.target, 'target'));
 $('target-edit-btn').addEventListener('click', () => lockTarget(false));

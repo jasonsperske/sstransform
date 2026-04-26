@@ -63,9 +63,10 @@ async function render() {
     delBtn.textContent = 'Delete';
     delBtn.addEventListener('click', async (e) => {
       e.preventDefault();
+      const snapshot = { ...p };
       await Projects.remove(p.id);
       await render();
-      showUndoToast(p);
+      showUndoToast(snapshot);
     });
     actions.appendChild(delBtn);
 
@@ -75,11 +76,12 @@ async function render() {
   }
 }
 
-// Undo-delete toast. Shows for UNDO_WINDOW_MS, then expires. After expiry the
-// row is left tombstoned in IDB; the page-load sweep (purgeAgedTombstones)
-// hard-deletes never-synced tombstones once they age past the same window.
+// Undo-delete toast. The full project payload is captured BEFORE the
+// server delete fires; clicking Undo re-uploads it. After UNDO_WINDOW_MS
+// the snapshot is dropped — there's no second-chance restore once the
+// toast expires.
 const UNDO_WINDOW_MS = 8000;
-let activeUndo = null; // { id, timer, el }
+let activeUndo = null; // { snapshot, timer, el }
 
 function dismissUndoToast() {
   if (!activeUndo) return;
@@ -88,30 +90,30 @@ function dismissUndoToast() {
   activeUndo = null;
 }
 
-function showUndoToast(project) {
+function showUndoToast(snapshot) {
   dismissUndoToast();
 
   const toast = document.createElement('div');
   toast.className = 'undo-toast';
 
   const label = document.createElement('span');
-  label.textContent = `Deleted "${project.name || 'Untitled project'}"`;
+  label.textContent = `Deleted "${snapshot.name || 'Untitled project'}"`;
   toast.appendChild(label);
 
   const btn = document.createElement('button');
   btn.textContent = 'Undo';
   btn.addEventListener('click', async () => {
-    const id = activeUndo && activeUndo.id;
+    const snap = activeUndo && activeUndo.snapshot;
     dismissUndoToast();
-    if (!id) return;
-    await Projects.restore(id);
+    if (!snap) return;
+    await Projects.restore(snap);
     await render();
   });
   toast.appendChild(btn);
 
   document.body.appendChild(toast);
   activeUndo = {
-    id: project.id,
+    snapshot,
     el: toast,
     timer: setTimeout(dismissUndoToast, UNDO_WINDOW_MS),
   };
@@ -141,19 +143,8 @@ menu.querySelectorAll('[data-type]').forEach(btn => {
 });
 
 (async () => {
-  // Hard-delete never-synced tombstones older than the undo window — covers
-  // the case where the user deleted a project on a previous visit and
-  // navigated away before the toast expired.
-  try { await Projects.purgeAgedTombstones({ olderThanMs: UNDO_WINDOW_MS }); }
-  catch (e) { console.warn('tombstone sweep failed', e); }
-
+  // Wait for any orphan-merge prompt to settle so the freshly-merged
+  // projects show up in the listing immediately.
+  if (window.Auth) await window.Auth.ready;
   await render();
-  // Pull any server-side projects + push local changes when an account is
-  // connected. Stub no-ops today; re-render once it lands real data.
-  try {
-    const result = await Sync.syncAll();
-    if (result && (result.pulled || result.pushed)) await render();
-  } catch (e) {
-    console.warn('home sync failed', e);
-  }
 })();

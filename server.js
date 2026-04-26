@@ -5,7 +5,14 @@ import path from 'node:path';
 import 'dotenv/config';
 import { runMigrations, openDb } from './lib/db.js';
 import { sessionMiddleware, mountAuthRoutes, authViewLocals, requireAuth } from './lib/auth.js';
-import { listForUser, getOne, putProject } from './lib/projects.js';
+import {
+  listForOwner,
+  getOne,
+  putProject,
+  deleteProject,
+  mergeOwner,
+  deleteAllForOwner,
+} from './lib/projects.js';
 import {
   AVAILABLE_MODELS,
   clientAndModelFor,
@@ -84,63 +91,80 @@ app.use((req, res, next) => {
 
 mountAuthRoutes(app);
 
-// ===== Project sync (per authenticated user) =====
+// ===== Projects =====
 //
-// Server stores opaque JSON blobs keyed by (userId, projectId). Every PUT
-// includes the client's last-seen `parentServerUpdatedAt`; if that no
-// longer matches the row's current `updatedAt`, the server returns 409
-// with the current server version so the client can present a conflict
-// dialog. Tombstones flow through the same PUT (deleted: 1).
+// Server is the only copy. Each row is keyed by `ownerKey` — the user id
+// for signed-in visitors, the session id for anonymous ones. Last writer
+// wins on PUT; clients refetch on next page load to pick up changes from
+// other tabs/devices. Anonymous projects can be re-keyed onto a user
+// account via POST /api/orphan-projects/merge after sign-in.
 
-app.get('/api/projects', requireAuth, (req, res) => {
-  const rows = listForUser(openDb(), req.user.id);
-  const projects = rows.map(r => ({
-    id: r.id,
-    project: JSON.parse(r.data),
-    serverUpdatedAt: r.updatedAt,
-    deleted: !!r.deleted,
-  }));
-  res.json({ projects, serverTime: Date.now() });
-});
+function ownerKeyOf(req) {
+  return req.user ? req.user.id : req.session.id;
+}
 
-app.get('/api/projects/:id', requireAuth, (req, res) => {
-  const row = getOne(openDb(), req.user.id, req.params.id);
-  if (!row) return res.status(404).json({ error: 'not found' });
+app.get('/api/projects', (req, res) => {
+  const rows = listForOwner(openDb(), ownerKeyOf(req));
   res.json({
-    project: JSON.parse(row.data),
-    serverUpdatedAt: row.updatedAt,
-    deleted: !!row.deleted,
+    projects: rows.map(r => ({
+      id: r.id,
+      project: JSON.parse(r.data),
+      updatedAt: r.updatedAt,
+    })),
   });
 });
 
-app.put('/api/projects/:id', requireAuth, (req, res) => {
-  const { project, parentServerUpdatedAt, deleted } = req.body || {};
+// Orphan endpoints must come BEFORE /api/projects/:id so 'orphan-projects'
+// isn't matched as a project id. They're keyed by req.session.id (the
+// pre-login owner key) and only meaningful once the user is authenticated
+// — for an anonymous visitor the session id IS the current owner, so
+// nothing is orphaned.
+app.get('/api/orphan-projects', requireAuth, (req, res) => {
+  const rows = listForOwner(openDb(), req.session.id);
+  res.json({
+    projects: rows.map(r => ({
+      id: r.id,
+      project: JSON.parse(r.data),
+      updatedAt: r.updatedAt,
+    })),
+  });
+});
+
+app.post('/api/orphan-projects/merge', requireAuth, (req, res) => {
+  const result = mergeOwner(openDb(), req.session.id, req.user.id);
+  res.json(result);
+});
+
+app.post('/api/orphan-projects/discard', requireAuth, (req, res) => {
+  const removed = deleteAllForOwner(openDb(), req.session.id);
+  res.json({ removed });
+});
+
+app.get('/api/projects/:id', (req, res) => {
+  const row = getOne(openDb(), ownerKeyOf(req), req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  res.json({ project: JSON.parse(row.data), updatedAt: row.updatedAt });
+});
+
+app.put('/api/projects/:id', (req, res) => {
+  const { project } = req.body || {};
   if (!project || typeof project !== 'object') {
     return res.status(400).json({ error: 'project body required' });
   }
   if (project.id && project.id !== req.params.id) {
     return res.status(400).json({ error: 'id mismatch' });
   }
-
   const result = putProject(openDb(), {
-    userId: req.user.id,
+    ownerKey: ownerKeyOf(req),
     id: req.params.id,
     data: project,
-    parentServerUpdatedAt: parentServerUpdatedAt || 0,
-    deleted: !!deleted,
   });
+  res.json({ updatedAt: result.updatedAt });
+});
 
-  if (result.conflict) {
-    return res.status(409).json({
-      conflict: true,
-      server: {
-        project: JSON.parse(result.server.data),
-        serverUpdatedAt: result.server.updatedAt,
-        deleted: !!result.server.deleted,
-      },
-    });
-  }
-  res.json({ serverUpdatedAt: result.serverUpdatedAt });
+app.delete('/api/projects/:id', (req, res) => {
+  const removed = deleteProject(openDb(), ownerKeyOf(req), req.params.id);
+  res.json({ removed });
 });
 
 // ===== User settings (model + personal API key) =====
@@ -249,26 +273,20 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
 
 const xlsxScript = '/vendor/xlsx-js-style/xlsx.bundle.js';
 const homeScripts = [
-  '/db.js',
   '/projects.js',
-  '/conflict-dialog.js',
-  '/sync.js',
+  '/auth-merge.js',
   '/home.js',
 ];
 const transformScripts = [
   xlsxScript,
-  '/db.js',
   '/projects.js',
-  '/conflict-dialog.js',
-  '/sync.js',
+  '/auth-merge.js',
   '/app.js',
 ];
 const mergeScripts = [
   xlsxScript,
-  '/db.js',
   '/projects.js',
-  '/conflict-dialog.js',
-  '/sync.js',
+  '/auth-merge.js',
   '/tools.js',
   '/merge.js',
 ];

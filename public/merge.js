@@ -148,12 +148,18 @@ function hydrateFromProject() {
   updateProposeEnabled();
 }
 
+let savesInFlight = 0;
+let lastSaveError = null;
+
 function updateProjectMeta() {
   const meta = $('project-meta');
   if (!meta || !project) return;
   const bits = [`id ${project.id.slice(0, 8)}`];
-  if (project.updatedAt) bits.push(`saved ${new Date(project.updatedAt).toLocaleTimeString()}`);
+  if (savesInFlight > 0) bits.push('saving…');
+  else if (lastSaveError) bits.push('save failed');
+  else if (project.updatedAt) bits.push(`saved ${new Date(project.updatedAt).toLocaleTimeString()}`);
   meta.textContent = bits.join(' · ');
+  meta.classList.toggle('save-error', !!lastSaveError && savesInFlight === 0);
 }
 
 function saveCurrent() {
@@ -174,14 +180,12 @@ function saveCurrent() {
     code: c.code || '',
     notes: c.notes || '',
   }));
-  Projects.upsert(project).catch(e => console.warn('project save failed', e));
+  savesInFlight++;
+  lastSaveError = null;
   updateProjectMeta();
-}
-
-let saveTimer = null;
-function scheduleSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveCurrent, 400);
+  Projects.upsert(project)
+    .catch(e => { lastSaveError = e; console.warn('project save failed', e); })
+    .finally(() => { savesInFlight--; updateProjectMeta(); });
 }
 
 // ===== File loading =====
@@ -246,9 +250,9 @@ function renderMatchAndColumns() {
   if (!matchWired) {
     matchArea.addEventListener('input', () => {
       state.matchCode = matchArea.value;
-      scheduleSave();
       schedulePreview();
     });
+    matchArea.addEventListener('blur', saveCurrent);
     matchWired = true;
   }
 
@@ -266,9 +270,9 @@ function renderMatchAndColumns() {
     codeArea.value = col.code || '';
     codeArea.addEventListener('input', () => {
       state.columns[idx].code = codeArea.value;
-      scheduleSave();
       schedulePreview();
     });
+    codeArea.addEventListener('blur', saveCurrent);
 
     const refineArea = el('textarea', {
       placeholder: `refinement for "${col.name}" (e.g. 'uppercase', 'prefer right side', 'format as E.164')`,
@@ -474,23 +478,15 @@ async function requestMerge({ refinementComment, suggestName, refineColumn, refi
 // ===== Event wiring =====
 
 (async () => {
+  // Wait for any post-login orphan-merge prompt before fetching the
+  // project — otherwise a deep link to a just-merged project id would
+  // 404 against the user's account and load as blank.
+  if (window.Auth) await window.Auth.ready;
   await initProject();
   hydrateFromProject();
-  // Deep-link sync — only re-hydrate when sync actually pulled a newer
-  // remote, so we don't clobber input the user just typed.
-  if (project && project.id) {
-    const before = project.updatedAt;
-    Sync.syncOne(project.id).then(async () => {
-      const fresh = await Projects.get(project.id);
-      if (fresh && (fresh.updatedAt || 0) > (before || 0)) {
-        project = fresh;
-        hydrateFromProject();
-      }
-    }).catch(e => console.warn('project sync failed', e));
-  }
 })();
 
-$('project-name').addEventListener('input', scheduleSave);
+$('project-name').addEventListener('blur', saveCurrent);
 $('left-file').addEventListener('change', (e) => loadFile(e.target, 'left'));
 $('right-file').addEventListener('change', (e) => loadFile(e.target, 'right'));
 $('left-sheet').addEventListener('change', (e) => {

@@ -509,6 +509,7 @@ table.grid td.cell-err {
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
+.project-meta.save-error { color: #b3261e; }
 
 /* Project bar (transform page) */
 .project-bar {

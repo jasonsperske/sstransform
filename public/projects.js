@@ -1,30 +1,17 @@
-// Client-side project store, backed by IndexedDB (see db.js).
+// Client-side project store — a thin async wrapper around /api/projects.
 //
-// All accessors are async and return Promises. The legacy localStorage store
-// is migrated automatically on first DB open.
+// The server is the only copy. Anonymous visitors store under their
+// session id; signed-in visitors store under their user id. Anonymous
+// projects can be merged into the user account on login (see auth-merge.js).
 //
 // Project shape (transform):
 //   { id, type: 'transform', name, createdAt, updatedAt,
-//     sourceHeaders, targetHeaders, transformations,
-//     serverUpdatedAt, dirty, deleted }
+//     sourceHeaders, targetHeaders, transformations }
 // Project shape (merge):
 //   { id, type: 'merge', name, createdAt, updatedAt,
 //     leftHeaders, rightHeaders, priority, matchCode, matchNotes,
-//     matchColumns, columns, serverUpdatedAt, dirty, deleted }
-//
-// Sync fields explained:
-//   updatedAt       — local last-modified ms; bumped on every upsert.
-//   serverUpdatedAt — last server-acked timestamp. 0 means never synced.
-//                     Sync compares updatedAt vs serverUpdatedAt to decide
-//                     direction. Set by sync.js after a successful push/pull.
-//   dirty           — 1 if local has changes not yet pushed; 0 after sync.
-//                     Indexed so pushAll() can scan only dirty rows.
-//   deleted         — 1 = tombstone awaiting server-side deletion. The home
-//                     list filters these out, but they remain in IDB so the
-//                     deletion can sync to other devices on the same account.
+//     matchColumns, columns }
 (function (global) {
-  const STORE = 'projects';
-
   function randomId() {
     if (global.crypto && typeof global.crypto.randomUUID === 'function') {
       return global.crypto.randomUUID();
@@ -32,84 +19,74 @@
     return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   }
 
-  function withSyncDefaults(p) {
-    return {
-      serverUpdatedAt: 0,
-      dirty: 1,
-      deleted: 0,
-      ...p,
-    };
+  async function fetchJSON(url, init = {}) {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      ...init,
+      headers: { ...(init.headers || {}) },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      let payload = null;
+      try { payload = await res.json(); } catch {}
+      const err = new Error(`${init.method || 'GET'} ${url} → ${res.status}`);
+      err.status = res.status;
+      err.payload = payload;
+      throw err;
+    }
+    if (res.status === 204) return null;
+    return res.json();
   }
 
   async function get(id) {
     if (!id) return null;
-    const row = await DB.getByKey(STORE, id);
-    if (!row || row.deleted) return null;
-    return row;
+    const data = await fetchJSON(`/api/projects/${encodeURIComponent(id)}`);
+    if (!data) return null;
+    return { ...data.project, id, updatedAt: data.updatedAt };
   }
 
-  // Internal: read a row including tombstones (used by sync to push deletes).
-  async function getRaw(id) {
-    if (!id) return null;
-    return (await DB.getByKey(STORE, id)) || null;
+  async function list() {
+    const data = await fetchJSON('/api/projects');
+    return (data?.projects || [])
+      .map(r => ({ ...r.project, id: r.id, updatedAt: r.updatedAt }))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 
-  async function upsert(project) {
-    if (!project || !project.id) return;
-    project.updatedAt = Date.now();
-    project.dirty = 1;
-    if (project.deleted == null) project.deleted = 0;
-    if (project.serverUpdatedAt == null) project.serverUpdatedAt = 0;
-    await DB.put(STORE, project);
+  // Saves are serialized via a per-project promise chain so two debounced
+  // saves of the same project can't race each other on the wire.
+  const saveChains = new Map();
+  function chainFor(id) {
+    return saveChains.get(id) || Promise.resolve();
   }
 
-  // Soft delete — always tombstone so the deletion is undoable AND can sync
-  // to other devices on the same account. Permanent removal happens later:
-  //   - sync.js after the server acks the deletion, or
-  //   - the home page's tombstone sweep for never-synced rows that have aged
-  //     past the undo window.
+  function upsert(project) {
+    if (!project || !project.id) return Promise.resolve();
+    const id = project.id;
+    const snapshot = { ...project };
+    const next = chainFor(id).then(async () => {
+      const data = await fetchJSON(`/api/projects/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ project: snapshot }),
+      });
+      project.updatedAt = data?.updatedAt || project.updatedAt;
+      return data;
+    });
+    saveChains.set(id, next.catch(() => {}));
+    return next;
+  }
+
   async function remove(id) {
-    const existing = await DB.getByKey(STORE, id);
-    if (!existing) return;
-    existing.deleted = 1;
-    existing.dirty = 1;
-    existing.updatedAt = Date.now();
-    await DB.put(STORE, existing);
+    if (!id) return;
+    await fetchJSON(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
-  // Undo a soft-delete. Bumps updatedAt + dirty so the restore syncs too.
-  async function restore(id) {
-    const existing = await DB.getByKey(STORE, id);
-    if (!existing) return null;
-    existing.deleted = 0;
-    existing.dirty = 1;
-    existing.updatedAt = Date.now();
-    await DB.put(STORE, existing);
-    return existing;
-  }
-
-  // Internal: hard delete (used by sync after server ack and by the home
-  // page's tombstone sweep for never-synced rows past the undo window).
-  async function hardRemove(id) {
-    await DB.deleteByKey(STORE, id);
-  }
-
-  // Sweep helper: hard-delete tombstones that were never synced and have aged
-  // past `olderThanMs`. Safe to call on every home-page load; ignores rows
-  // that have a serverUpdatedAt because those still need to push the deletion
-  // to the server before the local copy can be removed.
-  async function purgeAgedTombstones({ olderThanMs = 30_000 } = {}) {
-    const all = await DB.getAll(STORE);
-    const cutoff = Date.now() - olderThanMs;
-    let purged = 0;
-    for (const p of all) {
-      if (!p.deleted) continue;
-      if (p.serverUpdatedAt) continue; // sync needs to push the delete first
-      if ((p.updatedAt || 0) > cutoff) continue; // still inside undo window
-      await DB.deleteByKey(STORE, p.id);
-      purged++;
-    }
-    return purged;
+  // The undo flow needs a way to put a project back wholesale; since we
+  // hold the in-memory copy from before deletion, we just upsert it.
+  async function restore(project) {
+    if (!project || !project.id) return null;
+    await upsert(project);
+    return project;
   }
 
   async function create({ id, type = 'transform' } = {}) {
@@ -121,28 +98,11 @@
       createdAt: now,
       updatedAt: now,
     };
-    let project;
-    if (type === 'merge') {
-      project = {
-        ...base,
-        leftHeaders: [],
-        rightHeaders: [],
-        priority: 'left',
-        matchCode: '',
-        matchNotes: '',
-        matchColumns: [],
-        columns: [],
-      };
-    } else {
-      project = {
-        ...base,
-        sourceHeaders: [],
-        targetHeaders: [],
-        transformations: [],
-      };
-    }
-    project = withSyncDefaults(project);
-    await DB.put(STORE, project);
+    const project = type === 'merge'
+      ? { ...base, leftHeaders: [], rightHeaders: [], priority: 'left',
+          matchCode: '', matchNotes: '', matchColumns: [], columns: [] }
+      : { ...base, sourceHeaders: [], targetHeaders: [], transformations: [] };
+    await upsert(project);
     return project;
   }
 
@@ -150,79 +110,14 @@
     return (p.type === 'merge' ? '/merge/' : '/transform/') + encodeURIComponent(p.id);
   }
 
-  async function list() {
-    const all = await DB.getAll(STORE);
-    return all
-      .filter(p => !p.deleted)
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  }
-
-  // Sync helper: rows with unsynced local changes (including tombstones).
-  async function listDirty() {
-    return DB.getByIndex(STORE, 'by_dirty', 1);
-  }
-
-  // Sync helper: apply a server record to the local store. Caller is
-  // responsible for conflict resolution; this just writes.
-  async function applyRemote(project, { serverUpdatedAt }) {
-    project.serverUpdatedAt = serverUpdatedAt || project.updatedAt || Date.now();
-    project.dirty = 0;
-    if (project.deleted == null) project.deleted = 0;
-    await DB.put(STORE, project);
-  }
-
-  // Wipe every project (including tombstones) from local storage. Called on
-  // logout so a different user signing in on this browser doesn't see the
-  // previous user's projects.
-  async function clearAll() {
-    await DB.clear(STORE);
-  }
-
-  // Sync helper: mark a local row as successfully pushed.
-  async function markSynced(id, serverUpdatedAt) {
-    const row = await DB.getByKey(STORE, id);
-    if (!row) return;
-    if (row.deleted) {
-      await DB.deleteByKey(STORE, id);
-      return;
-    }
-    row.serverUpdatedAt = serverUpdatedAt || row.updatedAt || Date.now();
-    row.dirty = 0;
-    await DB.put(STORE, row);
-  }
-
   global.Projects = {
     get,
-    getRaw,
+    list,
     upsert,
     remove,
     restore,
-    hardRemove,
-    purgeAgedTombstones,
     create,
-    list,
-    listDirty,
-    applyRemote,
-    markSynced,
-    clearAll,
     randomId,
     url: projectUrl,
   };
-
-  // Intercept the layout's logout form so we can purge the local IDB before
-  // the server clears the session cookie. The form lives in layout.ejs and is
-  // already in the DOM by the time bodyScripts run (they're at end-of-body).
-  // form.submit() does not re-fire the submit event, so no re-entry guard.
-  const logoutForm = document.querySelector('form.auth-logout');
-  if (logoutForm) {
-    logoutForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        await clearAll();
-      } catch (err) {
-        console.warn('failed to purge local projects on logout', err);
-      }
-      logoutForm.submit();
-    });
-  }
 })(window);
