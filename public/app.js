@@ -442,7 +442,6 @@ function runOne(code, row) {
 function renderTransformations() {
   const container = $('transformations');
   container.innerHTML = '';
-  const sampleRow = sourceSample()[0];
   state.transformations.forEach((t, idx) => {
     const title = el('div', { className: 'xform-title' }, t.targetColumn);
     if (!t.code || !t.code.trim()) {
@@ -461,6 +460,7 @@ function renderTransformations() {
     const preview = el('span', { className: 'preview' }, '—');
     const runBtn = el('button', {
       onClick: () => {
+        const sampleRow = sourceSample()[0];
         if (!sampleRow) {
           preview.textContent = 'no sample row';
           preview.classList.add('err');
