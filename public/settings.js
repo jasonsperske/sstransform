@@ -23,6 +23,7 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   let defaultModel = '';
+  let availableModels = [];
   let hasApiKey = false;
   let tokenBalance = 0;
   let billingEnabled = false;
@@ -76,6 +77,22 @@
     modelSelect.disabled = !modelUnlocked();
   }
 
+  // The "(free)" suffix on the default model describes the prepaid-token
+  // gate — it's free because non-default models cost tokens. BYOK users
+  // pay Anthropic directly regardless of model, so the label is misleading.
+  function renderModelOptions() {
+    if (!availableModels.length) return;
+    const current = modelSelect.value;
+    modelSelect.innerHTML = '';
+    availableModels.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = hasApiKey ? m.label.replace(/\s*\(free\)\s*$/, '') : m.label;
+      modelSelect.appendChild(opt);
+    });
+    if (current) modelSelect.value = current;
+  }
+
   function renderBilling(billing) {
     if (!billingSection) return;
     if (!billingEnabled) {
@@ -86,6 +103,12 @@
     billingBalance.textContent = 'Balance: ' + tokenBalance.toLocaleString() + ' tokens';
 
     billingPacks.innerHTML = '';
+    // BYOK users pay Anthropic directly, so the token packs aren't relevant.
+    if (hasApiKey) {
+      billingPacks.hidden = true;
+      return;
+    }
+    billingPacks.hidden = false;
     const catalog = billing?.catalog;
     if (!catalog || !catalog.packs?.length) {
       const empty = document.createElement('div');
@@ -275,13 +298,8 @@
     tokenBalance = data.tokenBalance || 0;
     billingEnabled = !!data.billingEnabled;
 
-    modelSelect.innerHTML = '';
-    data.availableModels.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = m.label;
-      modelSelect.appendChild(opt);
-    });
+    availableModels = data.availableModels || [];
+    renderModelOptions();
     // No saved preference (or legacy null) → show the free default selected,
     // since that's what the runtime is actually using.
     modelSelect.value = data.model || defaultModel;
@@ -398,9 +416,11 @@
     hasApiKey = false;
     // Removing the key also resets the model override server-side.
     modelSelect.value = '';
+    renderModelOptions();
     renderModelEnabled();
     renderModelHint();
     renderApiKeyStatus();
+    billingPacks.hidden = false;
     setStatus('API key removed', 'success');
   });
 
@@ -427,9 +447,11 @@
     const data = await r.json();
     hasApiKey = data.hasApiKey;
     apiKeyInput.value = '';
+    renderModelOptions();
     renderModelEnabled();
     renderModelHint();
     renderApiKeyStatus();
+    billingPacks.hidden = hasApiKey;
     setStatus('Saved', 'success');
   });
 
