@@ -91,6 +91,7 @@ app.use(expressLayouts);
 app.set('layout', 'layout');
 
 app.locals.ga = process.env.GA || null;
+app.locals.adwords = process.env.GOOGLE_ADWORDS || null;
 app.locals.stripeEnabled = STRIPE_ENABLED;
 Object.assign(app.locals, authViewLocals());
 
