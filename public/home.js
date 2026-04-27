@@ -120,24 +120,9 @@ function showUndoToast(snapshot) {
   };
 }
 
-// New-project dropdown
-const menuBtn = $('new-project-btn');
-const menu = $('new-project-menu');
-
-menuBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  menu.hidden = !menu.hidden;
-});
-
-document.addEventListener('click', (e) => {
-  if (menu.hidden) return;
-  if (e.target === menuBtn || menu.contains(e.target)) return;
-  menu.hidden = true;
-});
-
-menu.querySelectorAll('[data-type]').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const type = btn.dataset.type;
+document.querySelectorAll('.project-card[data-type]').forEach(card => {
+  card.addEventListener('click', async () => {
+    const type = card.dataset.type;
     Analytics.track('button_click', { button: 'new_project', surface: 'home', project_type: type });
     const p = await Projects.create({ type });
     window.location.href = Projects.url(p);

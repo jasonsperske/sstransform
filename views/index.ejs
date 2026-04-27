@@ -1,16 +1,19 @@
 <section class="step">
   <div class="step-head">
     <h2>Projects</h2>
-    <div class="new-project-wrap">
-      <button id="new-project-btn" class="primary">New project ▾</button>
-      <div id="new-project-menu" class="menu" hidden>
-        <button data-type="transform">Transform project</button>
-        <button data-type="merge">Merge project</button>
-      </div>
-    </div>
+  </div>
+  <div class="new-project-cards">
+    <button type="button" class="project-card" data-type="transform">
+      <h3>New transform project</h3>
+      <p>Map one spreadsheet's columns into another's shape with AI-generated formulas.</p>
+    </button>
+    <button type="button" class="project-card" data-type="merge">
+      <h3>New merge project</h3>
+      <p>Combine two spreadsheets into one, joined on a shared key column.</p>
+    </button>
   </div>
   <div id="empty-state" class="info" hidden>
-    No projects yet. Click <strong>New project</strong> to create one.
+    No projects yet. Pick a project type above to create one.
   </div>
   <div id="project-list"></div>
 </section>

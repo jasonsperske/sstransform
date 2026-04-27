@@ -1,6 +1,7 @@
 import express from 'express';
 import expressLayouts from 'express-ejs-layouts';
 import cookieParser from 'cookie-parser';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import 'dotenv/config';
 import { runMigrations, openDb } from './lib/db.js';
@@ -377,20 +378,42 @@ app.get('/', (req, res) => {
   });
 });
 
+// Skeleton matches Projects.create() in public/projects.js — the server
+// persists a blank row up front so /transform and /merge are deep links
+// from the first hit, even before any user interaction.
+function blankProject(id, type) {
+  const now = Date.now();
+  const base = { id, type, name: '', createdAt: now, updatedAt: now };
+  return type === 'merge'
+    ? { ...base, leftHeaders: [], rightHeaders: [], priority: 'left',
+        matchCode: '', matchNotes: '', matchColumns: [], columns: [] }
+    : { ...base, sourceHeaders: [], targetHeaders: [], transformations: [] };
+}
+
 app.get('/transform/:id?', (req, res) => {
+  if (!req.params.id) {
+    const id = crypto.randomUUID();
+    putProject(openDb(), { ownerKey: ownerKeyOf(req), id, data: blankProject(id, 'transform') });
+    return res.redirect(`/transform/${id}`);
+  }
   res.render('transform', {
     title: 'Spreadsheet Transform — Transform',
     subtitle: "map one spreadsheet's columns into another's shape",
-    projectId: req.params.id || null,
+    projectId: req.params.id,
     bodyScripts: transformScripts,
   });
 });
 
 app.get('/merge/:id?', (req, res) => {
+  if (!req.params.id) {
+    const id = crypto.randomUUID();
+    putProject(openDb(), { ownerKey: ownerKeyOf(req), id, data: blankProject(id, 'merge') });
+    return res.redirect(`/merge/${id}`);
+  }
   res.render('merge', {
     title: 'Spreadsheet Transform — Merge',
     subtitle: 'merge two spreadsheets into one',
-    projectId: req.params.id || null,
+    projectId: req.params.id,
     bodyScripts: mergeScripts,
   });
 });

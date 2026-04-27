@@ -123,8 +123,6 @@ main {
   margin-bottom: 16px;
   overflow: hidden;
 }
-.step:has(.new-project-wrap) { overflow: visible; }
-
 .step-head {
   display: flex;
   align-items: center;
@@ -557,8 +555,53 @@ table.grid td.cell-err {
 .step.locked .step-head { background: #f3f3f1; }
 #target-locked-note { color: #888; font-style: italic; margin-left: 0; }
 
-/* New-project dropdown menu on home page */
-.new-project-wrap { position: relative; display: inline-block; margin-left: auto; }
+/* New-project cards on home page */
+.new-project-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid #e8e8e6;
+  background: #fafafa;
+}
+@media (max-width: 600px) {
+  .new-project-cards { grid-template-columns: 1fr; }
+}
+.project-card {
+  display: block;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #d8d8d6;
+  border-radius: 4px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+.project-card:hover {
+  background: #fff;
+  border-color: #1a7a43;
+  box-shadow: 0 2px 8px rgba(26, 122, 67, 0.1);
+}
+.project-card:focus-visible {
+  outline: 2px solid #1a7a43;
+  outline-offset: 2px;
+}
+.project-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a7a43;
+}
+.project-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+  line-height: 1.4;
+}
+
 .menu {
   position: absolute;
   top: calc(100% + 4px);
